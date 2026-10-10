@@ -2,6 +2,9 @@
 import { supabase } from "../data/supabaseClient.js";
 
 let _session = null;
+// Keep the cached session live across sign-in / sign-up / sign-out / token refresh,
+// so cachedUser() is correct immediately (not just after a page reload).
+if (supabase) supabase.auth.onAuthStateChange((_e, session) => { _session = session; });
 
 export async function getSession() {
   const { data } = await supabase.auth.getSession();
