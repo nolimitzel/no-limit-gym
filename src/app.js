@@ -6,6 +6,7 @@ import { pushWorkout, pushBodyweight, pushMacros } from "./data/cloudStore.js";
 import { getActiveProgramme } from "./data/programme.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { openEditor } from "./programme/editor.js";
+import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
 
 let _booted = false;
 export function initTracker() {
@@ -140,7 +141,7 @@ export function initTracker() {
     TAB = tab; ACTIVE = (opts && opts.session) || ACTIVE;
     document.querySelectorAll(".tabbar button").forEach(b =>
       b.classList.toggle("active", b.dataset.tab === tab));
-    ({ today: renderToday, train: renderTrain, progress: renderProgress, log: renderLog, plan: renderPlan }[tab])();
+    ({ today: renderToday, train: renderTrain, progress: renderProgress, log: renderLog, plan: renderPlan, squad: renderSquad }[tab])();
     window.scrollTo(0, 0);
   }
 
@@ -752,6 +753,54 @@ export function initTracker() {
     view().innerHTML = html;
   }
 
+  /* ============================ SQUAD ============================ */
+  async function renderSquad() {
+    const u = cachedUser();
+    view().innerHTML = `<div class="section-label">Your people</div><h1 class="h-title">Squad</h1>
+      <div class="empty" style="padding:30px">Loading…</div>`;
+    let squad;
+    try { squad = await getMySquad(u.id); }
+    catch (e) {
+      view().innerHTML = `<div class="section-label">Your people</div><h1 class="h-title">Squad</h1>
+        <div class="empty">Couldn't load squads.<br>If you just enabled this, make sure <b>migrate_4.sql</b> has run in Supabase.</div>`;
+      return;
+    }
+    if (!squad) return renderSquadJoin();
+
+    let members = [];
+    try { members = await getMembers(squad.id); } catch {}
+    const memberRows = members.map(m => {
+      const p = m.profiles || {};
+      const nm = p.name || p.username || "Member";
+      return `<div class="sq-member">
+        <span class="sq-av">${esc((nm[0] || "?").toUpperCase())}</span>
+        <span class="sq-mn"><b>${esc(nm)}</b><small>@${esc(p.username || "")}</small></span>
+        ${m.role === "owner" ? '<span class="sq-role">Owner</span>' : ""}</div>`;
+    }).join("");
+
+    view().innerHTML = `<div class="section-label">Your squad</div><h1 class="h-title">${esc(squad.name)}</h1>
+      <p class="h-sub">${members.length} member${members.length === 1 ? "" : "s"} · train together, stay accountable.</p>
+      <div class="card">
+        <div class="sq-invite"><div><div class="sq-ilabel">Invite code</div><div class="sq-code">${esc(squad.invite_code)}</div></div>
+          <button class="btn sm" data-act="copyinvite" data-code="${esc(squad.invite_code)}">Copy</button></div>
+        <p class="sq-ihint">Share this code — friends enter it in Squad → Join to train with you.</p>
+      </div>
+      <div class="subhead">Members</div>
+      <div class="card">${memberRows || '<div class="empty">No members yet.</div>'}</div>
+      <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:8px">↩ Leave squad</button>`;
+  }
+
+  function renderSquadJoin() {
+    view().innerHTML = `<div class="section-label">Your people</div><h1 class="h-title">Squad</h1>
+      <p class="h-sub">Train with your friends. Create a squad or join one with a code.</p>
+      <div class="card"><div class="field"><label>Create a squad</label>
+        <input id="sq-name" placeholder="e.g. The Grind" autocapitalize="words"></div>
+        <button class="btn sm" data-act="createsquad">Create squad</button></div>
+      <div class="card"><div class="field"><label>Join with an invite code</label>
+        <input id="sq-join" placeholder="6-character code" autocapitalize="characters" maxlength="6"></div>
+        <button class="btn sm ghost" data-act="joinsquad">Join squad</button></div>`;
+  }
+
   /* ============================ downloads ============================ */
   function download(name, text, type) {
     const blob = new Blob([text], { type: type || "text/plain" });
@@ -896,6 +945,27 @@ export function initTracker() {
     else if (act === "editprog") openEditor(() => go("plan"));
     else if (act === "history") renderHistory();
     else if (act === "backprogress") go("progress");
+    else if (act === "createsquad") {
+      const name = (document.getElementById("sq-name").value || "").trim();
+      if (!name) { toast("Name your squad"); return; }
+      createSquad(name).then(() => { toast("Squad created 🔥"); renderSquad(); })
+        .catch(e => toast(/relation|exist|function|schema/i.test(e.message || "") ? "Run migrate_4.sql first" : "Couldn't create squad"));
+    }
+    else if (act === "joinsquad") {
+      const code = (document.getElementById("sq-join").value || "").trim();
+      if (!code) { toast("Enter a code"); return; }
+      joinSquad(code).then(() => { toast("Joined the squad 🔥"); renderSquad(); })
+        .catch(e => toast(/invalid/i.test(e.message || "") ? "Invalid invite code" : "Couldn't join"));
+    }
+    else if (act === "leavesquad") {
+      if (confirm("Leave this squad?"))
+        leaveSquad(el.dataset.sid, cachedUser().id).then(() => { toast("Left squad"); renderSquad(); }).catch(() => toast("Couldn't leave"));
+    }
+    else if (act === "copyinvite") {
+      const code = el.dataset.code;
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(() => toast("Code copied")).catch(() => toast("Code: " + code));
+      else toast("Code: " + code);
+    }
   });
 
   document.addEventListener("change", function (e) {

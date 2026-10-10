@@ -1,0 +1,41 @@
+/* Squad data layer. All reads are RLS-gated: a user only ever sees squads they
+   belong to and the members/profiles of those squads. Create/join go through
+   SECURITY DEFINER RPCs. */
+import { supabase } from "./supabaseClient.js";
+
+const genCode = () =>
+  Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
+
+export async function getMySquad(userId) {
+  const { data: mem, error } = await supabase.from("squad_members")
+    .select("squad_id,role").eq("user_id", userId).limit(1);
+  if (error) throw error;
+  if (!mem || !mem[0]) return null;
+  const { data: sq } = await supabase.from("squads").select("*").eq("id", mem[0].squad_id).maybeSingle();
+  return sq ? { ...sq, myRole: mem[0].role } : null;
+}
+
+export async function getMembers(squadId) {
+  const { data, error } = await supabase.from("squad_members")
+    .select("user_id,role,joined_at,profiles(username,name,avatar_url)")
+    .eq("squad_id", squadId).order("joined_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createSquad(name) {
+  const { data, error } = await supabase.rpc("create_squad", { squad_name: name, code: genCode() });
+  if (error) throw error;
+  return data; // squad id
+}
+
+export async function joinSquad(code) {
+  const { data, error } = await supabase.rpc("join_squad", { code: (code || "").trim() });
+  if (error) throw error;
+  return data; // squad id
+}
+
+export async function leaveSquad(squadId, userId) {
+  const { error } = await supabase.from("squad_members").delete().match({ squad_id: squadId, user_id: userId });
+  if (error) throw error;
+}
