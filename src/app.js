@@ -8,6 +8,7 @@ import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.
 import { openEditor } from "./programme/editor.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
 import { getCurrentSquad, postActivity, getFeed, toggleReaction, REACTIONS } from "./data/social.js";
+import { getPrivacy, setPrivacy } from "./data/privacy.js";
 
 let _booted = false;
 export function initTracker() {
@@ -316,7 +317,7 @@ export function initTracker() {
     const u = cachedUser();
     if (u) pushWorkout(u.id, { date: todayStr(), session, entries }).catch(() => {});
     const sid = getCurrentSquad();
-    if (u && sid) postActivity(u.id, sid, "workout", { title: P.sessions[session]?.full || session, exercises: Object.keys(entries).length });
+    if (u && sid && getPrivacy().workouts) postActivity(u.id, sid, "workout", { title: P.sessions[session]?.full || session, exercises: Object.keys(entries).length });
     toast("Workout saved 💪");
     go("progress");
   }
@@ -727,6 +728,17 @@ export function initTracker() {
       P.supplements.map(s => `<li><b>${esc(s[0])}</b> — ${esc(s[1])}, ${esc(s[2])}. ${esc(s[3])}.</li>`).join("") +
       `</ul><div class="note">${esc(P.aminoNote)}</div></div>`;
 
+    // privacy
+    const pv = getPrivacy();
+    const privRow = (key, label) => `<div class="priv-row"><span>${label}</span>
+      <button class="toggle ${pv[key] ? "on" : ""}" data-act="togglepriv" data-key="${key}"><i></i></button></div>`;
+    html += `<div class="subhead">Privacy — what your squad sees</div><div class="card">
+      ${privRow("workouts", "Workouts")}
+      ${privRow("nutrition", "Nutrition")}
+      ${privRow("bodyweight", "Bodyweight")}
+      ${privRow("music", "Music")}
+      <p class="sq-ihint" style="margin-top:8px">You control what's shared. Turn Workouts off and your sessions stop posting to the feed.</p></div>`;
+
     // settings / data
     html += `<div class="subhead">Set-up &amp; data</div>`;
     const curPos = posForDate(todayStr());
@@ -809,7 +821,7 @@ export function initTracker() {
     return feed.map(p => {
       const name = p.profiles?.name || p.profiles?.username || "Someone";
       const text = p.type === "workout"
-        ? `completed <b>${esc(p.data?.title || "a workout")}</b>${p.data?.exercises ? ` · ${p.data.exercises} exercises` : ""}`
+        ? `completed <b>${esc(p.data?.title || "a workout")}</b>${p.data?.exercises ? ` · ${p.data.exercises} exercise${p.data.exercises === 1 ? "" : "s"}` : ""}`
         : `<b>${esc(p.data?.title || "did something")}</b>`;
       const reax = p.activity_reactions || [];
       const btns = REACTIONS.map(e => {
@@ -1002,6 +1014,11 @@ export function initTracker() {
     }
     else if (act === "react") {
       toggleReaction(el.dataset.pid, cachedUser().id, el.dataset.emoji).then(() => renderSquad()).catch(() => {});
+    }
+    else if (act === "togglepriv") {
+      const key = el.dataset.key;
+      setPrivacy(cachedUser().id, { [key]: !getPrivacy()[key] });
+      renderPlan();
     }
   });
 
