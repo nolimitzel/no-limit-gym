@@ -4,6 +4,7 @@
 import { signOut, cachedUser } from "./auth/auth.js";
 import { pushWorkout, pushBodyweight, pushMacros } from "./data/cloudStore.js";
 import { getActiveProgramme } from "./data/programme.js";
+import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { openEditor } from "./programme/editor.js";
 
 let _booted = false;
@@ -458,7 +459,7 @@ export function initTracker() {
     const days = weekBounds();
     const today = todayStr();
     const dn = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const t = P.targets;
+    const t = getActiveTargets();
     const L = [];
     L.push("🏋️ NO LIMIT — WEEKLY REVIEW");
     L.push("Week: " + prettyShort(days[0]) + " – " + prettyShort(days[6]));
@@ -522,10 +523,10 @@ export function initTracker() {
     if (mac.length) {
       const avgK = Math.round(mac.reduce((a, m) => a + (m.kcal || 0), 0) / mac.length);
       const avgP = Math.round(mac.reduce((a, m) => a + (m.protein || 0), 0) / mac.length);
-      const pHit = mac.filter(m => (m.protein || 0) >= t.proteinMin).length;
+      const pHit = mac.filter(m => (m.protein || 0) >= t.protein).length;
       L.push(`NUTRITION — ${mac.length}/7 days logged`);
-      L.push(`Avg calories: ${avgK} (target ${t.kcalMin}–${t.kcalMax})`);
-      L.push(`Avg protein: ${avgP}g (target ${t.proteinMin}–${t.proteinMax}) · hit on ${pHit}/${mac.length} days`);
+      L.push(`Avg calories: ${avgK} (target ${t.kcal})`);
+      L.push(`Avg protein: ${avgP}g (target ${t.protein}) · hit on ${pHit}/${mac.length} days`);
     } else L.push("NUTRITION — not logged this week");
 
     // Auto flags
@@ -557,38 +558,65 @@ export function initTracker() {
     document.body.appendChild(ov);
   }
 
+  function editTargets() {
+    const t = getActiveTargets();
+    const ov = document.createElement("div"); ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box">
+      <div class="modal-head"><b>My Targets</b><span class="mx" data-act="closemodal">✕</span></div>
+      <div class="rowflex">
+        <div class="field"><label>Calories</label><input id="tg-kcal" type="number" inputmode="numeric" value="${t.kcal}"></div>
+        <div class="field"><label>Protein (g)</label><input id="tg-prot" type="number" inputmode="numeric" value="${t.protein}"></div>
+      </div>
+      <div class="rowflex">
+        <div class="field"><label>Carbs (g)</label><input id="tg-carbs" type="number" inputmode="numeric" value="${t.carbs}"></div>
+        <div class="field"><label>Fats (g)</label><input id="tg-fats" type="number" inputmode="numeric" value="${t.fats}"></div>
+      </div>
+      <div class="modal-actions"><button class="btn sm" data-act="savetargets">Save targets</button></div>
+      <p class="modal-hint">Set your daily goals — the bars and weekly review use these.</p>
+    </div>`;
+    document.body.appendChild(ov);
+  }
+
   /* ============================ LOG (body + macros) ============================ */
   function renderLog() {
     const today = todayStr();
     const bwToday = DB.body.find(b => b.date === today);
-    const mToday = DB.macros.find(m => m.date === today) || { kcal: "", protein: "" };
-    const t = P.targets;
+    const mToday = DB.macros.find(m => m.date === today) || {};
+    const t = getActiveTargets();
 
     let html = `<div class="section-label">Daily log · ${esc(shortDate(today))}</div>
-      <h1 class="h-title">Body &amp; Fuel</h1><p class="h-sub">Track the 72 → 76 kg journey.</p>`;
+      <h1 class="h-title">Body &amp; Fuel</h1><p class="h-sub">Hit your numbers, every day.</p>`;
 
     html += `<div class="card"><div class="field"><label>Bodyweight today (kg)</label>
       <input id="bw" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 72.4" value="${bwToday ? bwToday.weight : ""}"></div>
       <button class="btn sm" data-act="savebw">Save weight</button></div>`;
 
-    const kcal = mToday.kcal || 0, prot = mToday.protein || 0;
-    const kPct = Math.min(100, Math.round(kcal / t.kcalMax * 100));
-    const pPct = Math.min(100, Math.round(prot / t.proteinMax * 100));
-    html += `<div class="card"><div class="rowflex">
-        <div class="field"><label>Calories today</label>
-          <input id="kcal" type="number" inputmode="numeric" placeholder="kcal" value="${mToday.kcal || ""}"></div>
-        <div class="field"><label>Protein (g)</label>
-          <input id="prot" type="number" inputmode="numeric" placeholder="g" value="${mToday.protein || ""}"></div>
+    const bar = (label, val, target, unit) => {
+      const pct = target ? Math.min(100, Math.round(val / target * 100)) : 0;
+      return `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:10px">
+          <span>${label}</span><span>${val} / ${target}${unit}</span></div>
+        <div class="bar ${val > target ? "over" : ""}"><i style="width:${pct}%"></i></div>`;
+    };
+    const m = { kcal: mToday.kcal || 0, protein: mToday.protein || 0, carbs: mToday.carbs || 0, fats: mToday.fats || 0 };
+    html += `<div class="card">
+      <div class="rowflex">
+        <div class="field"><label>Calories</label><input id="kcal" type="number" inputmode="numeric" placeholder="kcal" value="${mToday.kcal ?? ""}"></div>
+        <div class="field"><label>Protein (g)</label><input id="prot" type="number" inputmode="numeric" placeholder="g" value="${mToday.protein ?? ""}"></div>
+      </div>
+      <div class="rowflex">
+        <div class="field"><label>Carbs (g)</label><input id="carbs" type="number" inputmode="numeric" placeholder="g" value="${mToday.carbs ?? ""}"></div>
+        <div class="field"><label>Fats (g)</label><input id="fats" type="number" inputmode="numeric" placeholder="g" value="${mToday.fats ?? ""}"></div>
       </div>
       <button class="btn sm" data-act="savemacro">Save fuel</button>
       <div style="margin-top:16px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
-          <span>Calories</span><span>${kcal} / ${t.kcalMin}–${t.kcalMax}</span></div>
-        <div class="bar ${kcal > t.kcalMax ? "over" : ""}"><i style="width:${kPct}%"></i></div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:10px">
-          <span>Protein</span><span>${prot} / ${t.proteinMin}–${t.proteinMax} g</span></div>
-        <div class="bar"><i style="width:${pPct}%"></i></div>
-      </div></div>`;
+        ${bar("Calories", m.kcal, t.kcal, "")}
+        ${bar("Protein", m.protein, t.protein, " g")}
+        ${bar("Carbs", m.carbs, t.carbs, " g")}
+        ${bar("Fats", m.fats, t.fats, " g")}
+      </div>
+      <button class="linkbtn" data-act="edittargets" style="margin-top:14px">✎ Edit my targets
+        <small>${t.kcal} kcal · ${t.protein}g P · ${t.carbs}g C · ${t.fats}g F</small></button>
+    </div>`;
 
     // protein trend — only days that were actually logged (last 14 entries)
     const logged = DB.macros.filter(m => m.protein > 0).slice(-14)
@@ -661,11 +689,11 @@ export function initTracker() {
     html += `<div class="subhead">Training rules</div><div class="card"><ul class="clean">` +
       P.rules.map(r => `<li>${esc(r)}</li>`).join("") + `</ul></div>`;
 
-    const t = P.targets;
-    html += `<div class="subhead">Nutrition · lean gain</div><div class="card"><ul class="clean">
-      <li><b>Calories:</b> ${t.kcalMin}–${t.kcalMax} (slight surplus)</li>
-      <li><b>Protein:</b> ${t.proteinMin}–${t.proteinMax} g</li>
-      <li><b>Carbs:</b> ${t.carbsMin}–${t.carbsMax} g · <b>Fats:</b> ${t.fatMin}–${t.fatMax} g</li>
+    const t = getActiveTargets();
+    html += `<div class="subhead">Nutrition · your targets</div><div class="card"><ul class="clean">
+      <li><b>Calories:</b> ${t.kcal}</li>
+      <li><b>Protein:</b> ${t.protein} g</li>
+      <li><b>Carbs:</b> ${t.carbs} g · <b>Fats:</b> ${t.fats} g</li>
       <li><b>Breakfast:</b> oats + whey + berries + peanut butter</li>
       <li><b>Timing:</b> breakfast · lunch · post-workout shake · dinner</li></ul></div>`;
 
@@ -768,14 +796,22 @@ export function initTracker() {
       toast("Weight saved"); renderLog();
     }
     else if (act === "savemacro") {
-      const k = parseInt(document.getElementById("kcal").value, 10);
-      const p = parseInt(document.getElementById("prot").value, 10);
+      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : v; };
       const t = todayStr(); let m = DB.macros.find(x => x.date === t);
-      if (!m) { m = { date: t, kcal: 0, protein: 0 }; DB.macros.push(m); }
-      m.kcal = isNaN(k) ? 0 : k; m.protein = isNaN(p) ? 0 : p;
+      if (!m) { m = { date: t }; DB.macros.push(m); }
+      m.kcal = num("kcal"); m.protein = num("prot"); m.carbs = num("carbs"); m.fats = num("fats");
       DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1)); save();
-      { const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein }).catch(() => {}); }
+      { const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fats: m.fats }).catch(() => {}); }
       toast("Fuel logged"); renderLog();
+    }
+    else if (act === "edittargets") editTargets();
+    else if (act === "savetargets") {
+      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : v; };
+      const tg = { kcal: num("tg-kcal"), protein: num("tg-prot"), carbs: num("tg-carbs"), fats: num("tg-fats") };
+      setActiveTargets(tg);
+      const u = cachedUser(); if (u) saveTargets(u.id, tg).catch(() => {});
+      const mo = el.closest(".modal"); if (mo) mo.remove();
+      toast("Targets updated"); renderLog();
     }
     else if (act === "ics") { download("gym-reminders.ics", buildICS(), "text/calendar"); toast("Open the file to add to Calendar"); }
     else if (act === "export") { download("gym-backup-" + todayStr() + ".json", JSON.stringify(DB, null, 2), "application/json"); toast("Backup downloaded"); }
