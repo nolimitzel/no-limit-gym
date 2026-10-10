@@ -1,0 +1,140 @@
+/* Programme editor — build your own split.
+   Edits a working copy of { sessions, cycle }; Save persists (local + cloud) and
+   reloads so the whole app picks up the new programme. Cancel discards. */
+import { getActiveProgramme } from "../data/programme.js";
+import { saveProgramme } from "../data/programmeStore.js";
+import { EXERCISE_LIBRARY, MUSCLE_GROUPS, toProgrammeExercise } from "../data/exerciseLibrary.js";
+import { cachedUser } from "../auth/auth.js";
+import { esc } from "../ui/safeRender.js";
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const view = () => document.getElementById("view");
+let work, onCloseCb;
+
+export function openEditor(onClose) {
+  onCloseCb = onClose;
+  const p = getActiveProgramme();
+  work = JSON.parse(JSON.stringify({ sessions: p.sessions, cycle: p.cycle }));
+  render();
+}
+
+const newDayId = () => "day-" + Math.random().toString(36).slice(2, 7);
+
+function render() {
+  let h = `<div class="ed">
+    <div class="ed-top">
+      <button class="ed-back" data-act="ed-back">‹ Back</button>
+      <b>Edit Programme</b>
+      <button class="btn sm" data-act="ed-save">Save</button>
+    </div>
+    <p class="ed-hint">Build each day from the library — add, reorder or remove. Changes save to your account.</p>`;
+
+  work.cycle.forEach((c, i) => {
+    if (c.type === "rest") {
+      h += `<div class="ed-day rest">
+        <div class="ed-day-h"><span class="ed-wd">${DAYS[i]}</span><b class="ed-rest-label">Rest day</b>
+          <button class="ed-mini" data-act="ed-train" data-i="${i}">+ Training day</button></div></div>`;
+      return;
+    }
+    const s = work.sessions[c.session] || { exercises: [] };
+    const rows = s.exercises.map((ex, j) => `
+      <div class="ed-ex">
+        <span class="ed-ex-n">${esc(ex.name)}${ex.cardio ? " 🔥" : ""}</span>
+        <span class="ed-ex-m">${esc(ex.sets)}×${esc(ex.reps)}</span>
+        <span class="ed-ctl">
+          <button data-act="ed-up" data-i="${i}" data-j="${j}">↑</button>
+          <button data-act="ed-down" data-i="${i}" data-j="${j}">↓</button>
+          <button data-act="ed-rm" data-i="${i}" data-j="${j}">✕</button>
+        </span></div>`).join("");
+    h += `<div class="ed-day">
+      <div class="ed-day-h"><span class="ed-wd">${DAYS[i]}</span>
+        <b class="ed-name" data-act="ed-rename" data-i="${i}">${esc(s.full || s.name || "Workout")}</b>
+        <button class="ed-mini" data-act="ed-rest" data-i="${i}">Rest</button></div>
+      ${rows || '<div class="ed-empty">No exercises yet</div>'}
+      <button class="ed-add" data-act="ed-add" data-i="${i}">+ Add exercise</button></div>`;
+  });
+  h += `</div>`;
+  view().innerHTML = h;
+  wire();
+}
+
+function daySession(i) {
+  const c = work.cycle[i];
+  if (c.type !== "train") return null;
+  return (work.sessions[c.session] ||= { name: "Workout", full: "Workout", sub: "", exercises: [] });
+}
+
+function wire() {
+  view().querySelectorAll("[data-act]").forEach((el) => {
+    const act = el.dataset.act, i = +el.dataset.i, j = +el.dataset.j;
+    el.addEventListener("click", () => {
+      if (act === "ed-back") return onCloseCb && onCloseCb();
+      if (act === "ed-save") return doSave(el);
+      if (act === "ed-rm") { daySession(i).exercises.splice(j, 1); return render(); }
+      if (act === "ed-up" && j > 0) { const a = daySession(i).exercises; [a[j - 1], a[j]] = [a[j], a[j - 1]]; return render(); }
+      if (act === "ed-down") { const a = daySession(i).exercises; if (j < a.length - 1) { [a[j + 1], a[j]] = [a[j], a[j + 1]]; } return render(); }
+      if (act === "ed-add") return openPicker(i);
+      if (act === "ed-rename") {
+        const s = daySession(i); const name = prompt("Workout name", s.full || s.name);
+        if (name) { s.name = name; s.full = name; } return render();
+      }
+      if (act === "ed-rest") {
+        if (confirm("Make " + DAYS[i] + " a rest day? Its exercises will be removed.")) {
+          delete work.sessions[work.cycle[i].session]; work.cycle[i] = { type: "rest" };
+        } return render();
+      }
+      if (act === "ed-train") {
+        const name = prompt("Workout name for " + DAYS[i], "Workout"); if (!name) return;
+        const id = newDayId(); work.sessions[id] = { name, full: name, sub: "", exercises: [] };
+        work.cycle[i] = { type: "train", session: id }; return render();
+      }
+    });
+  });
+}
+
+async function doSave(btn) {
+  btn.disabled = true; btn.textContent = "Saving…";
+  const u = cachedUser();
+  try { if (u) await saveProgramme(u.id, work); } catch (e) { console.warn("[NO LIMIT] programme cloud save failed (saved locally).", e?.message || e); }
+  location.reload();   // reboot so the whole app uses the new programme
+}
+
+/* ---------- library picker ---------- */
+function openPicker(dayIndex) {
+  const ov = document.createElement("div");
+  ov.className = "ed-picker";
+  ov.innerHTML = `<div class="ed-pbox">
+    <div class="ed-ptop"><b>Add exercise</b><button class="ed-pclose">✕</button></div>
+    <input class="ed-search" placeholder="Search exercises…" autocapitalize="none">
+    <div class="ed-plist">${pickerList("")}</div></div>`;
+  document.body.appendChild(ov);
+
+  const close = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+  ov.querySelector(".ed-pclose").addEventListener("click", close);
+  const search = ov.querySelector(".ed-search");
+  const list = ov.querySelector(".ed-plist");
+  search.addEventListener("input", () => { list.innerHTML = pickerList(search.value.toLowerCase()); bindItems(); });
+
+  const bindItems = () => list.querySelectorAll(".ed-pi").forEach((it) =>
+    it.addEventListener("click", () => {
+      const s = daySession(dayIndex);
+      if (s && !s.exercises.some((x) => x.id === it.dataset.k)) {
+        s.exercises.push(toProgrammeExercise(it.dataset.k));
+      }
+      close(); render();
+    }));
+  bindItems();
+}
+
+function pickerList(q) {
+  return MUSCLE_GROUPS.map((g) => {
+    const items = EXERCISE_LIBRARY.filter((e) => e.group === g &&
+      (!q || e.name.toLowerCase().includes(q) || g.toLowerCase().includes(q)));
+    if (!items.length) return "";
+    return `<div class="ed-pg">${g}</div>` + items.map((e) =>
+      `<button class="ed-pi" data-k="${e.key}">
+        <span>${esc(e.name)}${e.cardio ? " 🔥" : ""}</span>
+        <small>${esc(e.equipment)} · ${esc(e.sets)}×${esc(e.reps)}</small></button>`).join("");
+  }).join("");
+}

@@ -1,18 +1,20 @@
 /* ==========================================================================
    NO LIMIT — Gym Tracker  (offline, on-device PWA)
    ========================================================================== */
-import { PLAN } from "./data.js";
 import { signOut, cachedUser } from "./auth/auth.js";
 import { pushWorkout, pushBodyweight, pushMacros } from "./data/cloudStore.js";
+import { getActiveProgramme } from "./data/programme.js";
+import { openEditor } from "./programme/editor.js";
 
 let _booted = false;
 export function initTracker() {
   if (_booted) return;
   _booted = true;
   const KEY = "gymtracker.v1:" + (cachedUser()?.id || "local");  // per-user local cache
-  const P = PLAN;
-  const SESSION_IDS = ["push", "back", "legs", "chestshoulders", "arms"];
-  const NUMS = { push: 1, back: 2, legs: 3, chestshoulders: 5, arms: 6 }; // schedule day #s
+  const P = getActiveProgramme();                                 // this user's programme
+  const SESSION_IDS = Object.keys(P.sessions);
+  const NUMS = {};                                                // schedule day #s from the cycle
+  P.cycle.forEach((c, i) => { if (c.type === "train") NUMS[c.session] = i + 1; });
   const isCardio = id => !!exMeta(id).cardio;
 
   /* ---------- storage ---------- */
@@ -616,7 +618,8 @@ export function initTracker() {
   function renderPlan() {
     const nums = NUMS;
     let html = `<div class="section-label">Reference</div><h1 class="h-title">The Plan</h1>
-      <p class="h-sub">Your full programme, always in your pocket.</p>`;
+      <p class="h-sub">Your full programme, always in your pocket.</p>
+      <button class="btn" data-act="editprog" style="margin:0 0 18px">✎ Edit my programme</button>`;
 
     html += `<div class="subhead">Warm-up · every session</div><div class="card"><ul class="clean">` +
       P.warmup.map(w => `<li>${esc(w)}</li>`).join("") + `</ul></div>`;
@@ -783,6 +786,7 @@ export function initTracker() {
     else if (act === "logout") {
       if (confirm("Log out of No Limit?")) signOut().then(() => location.reload());
     }
+    else if (act === "editprog") openEditor(() => go("plan"));
   });
 
   document.addEventListener("change", function (e) {

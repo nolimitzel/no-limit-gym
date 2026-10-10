@@ -11,10 +11,13 @@ import { mountAuth } from "./auth/authUI.js";
 import { needsOnboarding } from "./auth/profile.js";
 import { mountOnboarding } from "./auth/onboarding.js";
 import { loadAll, migrateLocal } from "./data/cloudStore.js";
+import { loadProgramme } from "./data/programmeStore.js";
+import { setActiveProgramme } from "./data/programme.js";
 
 const LEGACY_KEY = "gymtracker.v1";                       // pre-2.0 single-user blob
 
 async function bootApp(user) {
+  setActiveProgramme(await loadProgramme(user.id));       // this user's programme (local-first)
   try {
     // 1) one-time legacy migration — the first account on this device claims it
     const legacyRaw = localStorage.getItem(LEGACY_KEY);

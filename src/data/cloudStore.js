@@ -11,19 +11,7 @@
    exercise_key / session_key so the round-trip is lossless; the display name is
    snapshotted so history survives a future rename. */
 import { supabase } from "./supabaseClient.js";
-import { PLAN } from "../data.js";
-
-/* ---- lookups from the static plan (display names, cardio flag) ---- */
-function exMeta(key) {
-  for (const sid of Object.keys(PLAN.sessions)) {
-    const e = PLAN.sessions[sid].exercises.find((x) => x.id === key);
-    if (e) return e;
-  }
-  return null;
-}
-const exName = (key) => exMeta(key)?.name || key;
-const isCardioKey = (key) => !!exMeta(key)?.cardio;
-const sessionName = (key) => PLAN.sessions[key]?.full || key;
+import { exName, isCardioKey, sessionName } from "./programme.js";
 
 /* ---- WRITE one workout: idempotent per (date, session_key) ---- */
 export async function pushWorkout(userId, log) {
