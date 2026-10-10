@@ -193,5 +193,9 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- ---------- 1c: stable app slugs for lossless round-trip ----------
+alter table public.workout_sessions add column if not exists session_key text;
+alter table public.workout_sets     add column if not exists exercise_key text;
+
 -- Done. Every table is RLS-protected: a user can only ever read/write their own
 -- rows (exercises additionally allow reading rows explicitly marked public).
