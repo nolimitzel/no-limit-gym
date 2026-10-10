@@ -2,7 +2,7 @@
    THE PLAN — single source of truth for the training programme.
    Exercise ids are shared across sessions so history/PRs aggregate per lift.
    ========================================================================== */
-window.PLAN = {
+export const PLAN = {
   // Nutrition targets (lean gain 72 -> 76 kg)
   targets: { kcalMin: 2650, kcalMax: 2800, proteinMin: 150, proteinMax: 170,
              carbsMin: 280, carbsMax: 330, fatMin: 65, fatMax: 80 },

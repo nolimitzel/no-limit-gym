@@ -1,0 +1,6 @@
+# For Git-based Netlify deploys. (Drag-dropping the dist/ folder ignores this.)
+# If you connect this repo to Netlify, also set the two VITE_SUPABASE_* env vars
+# in Netlify → Site settings → Environment variables.
+[build]
+  command = "npm run build"
+  publish = "dist"

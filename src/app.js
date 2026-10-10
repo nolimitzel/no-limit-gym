@@ -1,10 +1,12 @@
 /* ==========================================================================
    NO LIMIT — Gym Tracker  (offline, on-device PWA)
    ========================================================================== */
+import { PLAN } from "./data.js";
+
 (function () {
   "use strict";
   const KEY = "gymtracker.v1";
-  const P = window.PLAN;
+  const P = PLAN;
   const SESSION_IDS = ["push", "back", "legs", "chestshoulders", "arms"];
   const NUMS = { push: 1, back: 2, legs: 3, chestshoulders: 5, arms: 6 }; // schedule day #s
   const isCardio = id => !!exMeta(id).cardio;
@@ -790,7 +792,5 @@
   ensureAnchor();
   renderHeader();
   go("today");
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
-  }
+  // Service worker is auto-registered by vite-plugin-pwa (see vite.config.js).
 })();
