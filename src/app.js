@@ -618,6 +618,26 @@ export function initTracker() {
         <small>${t.kcal} kcal · ${t.protein}g P · ${t.carbs}g C · ${t.fats}g F</small></button>
     </div>`;
 
+    // meals — log what you ate; each adds to today's totals above
+    const meals = (DB.macros.find(x => x.date === today)?.meals) || [];
+    html += `<div class="subhead">Meals today</div><div class="card">`;
+    meals.forEach((ml, idx) => {
+      html += `<div class="meal-row"><span class="meal-n">${esc(ml.name)}</span>
+        <span class="meal-m">${ml.kcal} kcal · ${ml.protein}g P</span>
+        <span class="meal-x" data-act="delmeal" data-idx="${idx}">✕</span></div>`;
+    });
+    if (!meals.length) html += `<div class="empty" style="padding:10px 0">No meals yet — add one to build your day.</div>`;
+    html += `<div class="meal-add">
+      <input id="ml-name" placeholder="Meal (e.g. Breakfast)" autocapitalize="words">
+      <div class="rowflex" style="margin-top:8px">
+        <input id="ml-kcal" type="number" inputmode="numeric" placeholder="kcal">
+        <input id="ml-prot" type="number" inputmode="numeric" placeholder="protein">
+        <input id="ml-carbs" type="number" inputmode="numeric" placeholder="carbs">
+        <input id="ml-fats" type="number" inputmode="numeric" placeholder="fats">
+      </div>
+      <button class="btn sm" data-act="addmeal" style="margin-top:10px">+ Add meal</button>
+    </div></div>`;
+
     // protein trend — only days that were actually logged (last 14 entries)
     const logged = DB.macros.filter(m => m.protein > 0).slice(-14)
       .map(m => ({ label: m.date, y: m.protein }));
@@ -803,6 +823,32 @@ export function initTracker() {
       DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1)); save();
       { const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fats: m.fats }).catch(() => {}); }
       toast("Fuel logged"); renderLog();
+    }
+    else if (act === "addmeal") {
+      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : v; };
+      const ml = { name: (document.getElementById("ml-name").value || "").trim() || "Meal",
+        kcal: num("ml-kcal"), protein: num("ml-prot"), carbs: num("ml-carbs"), fats: num("ml-fats") };
+      if (!ml.kcal && !ml.protein && !ml.carbs && !ml.fats) { toast("Enter the meal's macros"); return; }
+      const t = todayStr(); let m = DB.macros.find(x => x.date === t);
+      if (!m) { m = { date: t, kcal: 0, protein: 0, carbs: 0, fats: 0 }; DB.macros.push(m); }
+      m.meals = m.meals || [];
+      m.meals.push(ml);
+      m.kcal = (m.kcal || 0) + ml.kcal; m.protein = (m.protein || 0) + ml.protein;
+      m.carbs = (m.carbs || 0) + ml.carbs; m.fats = (m.fats || 0) + ml.fats;
+      DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1)); save();
+      { const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fats: m.fats }).catch(() => {}); }
+      toast("Meal added"); renderLog();
+    }
+    else if (act === "delmeal") {
+      const idx = +el.dataset.idx, t = todayStr(), m = DB.macros.find(x => x.date === t);
+      if (m && m.meals && m.meals[idx]) {
+        const ml = m.meals.splice(idx, 1)[0];
+        m.kcal = Math.max(0, (m.kcal || 0) - ml.kcal); m.protein = Math.max(0, (m.protein || 0) - ml.protein);
+        m.carbs = Math.max(0, (m.carbs || 0) - ml.carbs); m.fats = Math.max(0, (m.fats || 0) - ml.fats);
+        save();
+        const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fats: m.fats }).catch(() => {});
+        renderLog();
+      }
     }
     else if (act === "edittargets") editTargets();
     else if (act === "savetargets") {

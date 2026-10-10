@@ -334,3 +334,14 @@ body.chrome-hidden #view{padding:0}
 .hist-ex{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
 .hist-ex span:first-child{color:#d5d8cf}
 .hist-m{font-family:var(--cond);font-variant-numeric:tabular-nums;color:var(--volt);white-space:nowrap}
+
+/* meals */
+.meal-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.meal-n{flex:1;font-size:13.5px;font-weight:600}
+.meal-m{font-size:12px;color:var(--muted);white-space:nowrap}
+.meal-x{color:var(--dim);font-size:16px;padding:0 4px}
+.meal-add{margin-top:12px}
+.meal-add > input{width:100%;background:#0A0B0A;border:1px solid var(--line2);border-radius:6px;color:var(--ink);font-size:15px;padding:11px}
+.meal-add > input:focus,.meal-add .rowflex input:focus{outline:none;border-color:var(--volt)}
+.meal-add .rowflex input{width:100%;min-width:0;background:#0A0B0A;border:1px solid var(--line2);border-radius:6px;
+  color:var(--ink);font-family:var(--cond);font-variant-numeric:tabular-nums;font-size:15px;padding:10px;text-align:center}
