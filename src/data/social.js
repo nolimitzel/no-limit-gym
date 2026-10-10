@@ -1,0 +1,30 @@
+/* Social layer — activity feed + reactions. All RLS-gated to the squad. */
+import { supabase } from "./supabaseClient.js";
+
+// the user's current squad id, cached at boot so workout posts don't need a fetch
+let _squadId = null;
+export function setCurrentSquad(id) { _squadId = id || null; }
+export function getCurrentSquad() { return _squadId; }
+
+export const REACTIONS = ["🔥", "💪", "👏"];
+
+export async function postActivity(userId, squadId, type, data) {
+  if (!squadId) return;
+  try { await supabase.from("activity_posts").insert({ user_id: userId, squad_id: squadId, type, data }); }
+  catch (e) { console.warn("[NO LIMIT] activity post failed", e?.message || e); }
+}
+
+export async function getFeed(squadId) {
+  const { data, error } = await supabase.from("activity_posts")
+    .select("id,user_id,type,data,created_at,profiles(username,name),activity_reactions(emoji,user_id)")
+    .eq("squad_id", squadId).order("created_at", { ascending: false }).limit(30);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function toggleReaction(postId, userId, emoji) {
+  const { data } = await supabase.from("activity_reactions")
+    .select("id").match({ post_id: postId, user_id: userId, emoji });
+  if (data && data[0]) await supabase.from("activity_reactions").delete().eq("id", data[0].id);
+  else await supabase.from("activity_reactions").insert({ post_id: postId, user_id: userId, emoji });
+}

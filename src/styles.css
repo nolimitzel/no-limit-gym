@@ -360,3 +360,15 @@ body.chrome-hidden #view{padding:0}
 .sq-mn small{color:var(--muted);font-size:11.5px}
 .sq-role{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--volt);
   border:1px solid var(--volt-dim,#3a3e35);border-radius:4px;padding:3px 7px}
+
+/* feed */
+.feed-post{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.feed-h{display:flex;gap:11px;align-items:flex-start}
+.sq-av.sm{width:32px;height:32px;font-size:15px}
+.feed-t{flex:1;font-size:13px;line-height:1.45;color:#d5d8cf}
+.feed-t b{color:var(--ink)}
+.feed-t small{display:block;color:var(--dim);font-size:10.5px;margin-top:2px;text-transform:uppercase;letter-spacing:.06em}
+.feed-reax{display:flex;gap:8px;margin-top:10px;padding-left:43px}
+.reax{background:var(--surface2);border:1px solid var(--line2);border-radius:20px;padding:5px 12px;font-size:13px;color:var(--muted)}
+.reax.on{background:var(--volt-ghost);border-color:var(--volt);color:var(--volt)}
+.reax:active{transform:scale(.95)}

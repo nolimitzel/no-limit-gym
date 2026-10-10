@@ -7,6 +7,7 @@ import { getActiveProgramme } from "./data/programme.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { openEditor } from "./programme/editor.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
+import { getCurrentSquad, postActivity, getFeed, toggleReaction, REACTIONS } from "./data/social.js";
 
 let _booted = false;
 export function initTracker() {
@@ -314,6 +315,8 @@ export function initTracker() {
     upsertLog(todayStr(), session, entries);
     const u = cachedUser();
     if (u) pushWorkout(u.id, { date: todayStr(), session, entries }).catch(() => {});
+    const sid = getCurrentSquad();
+    if (u && sid) postActivity(u.id, sid, "workout", { title: P.sessions[session]?.full || session, exercises: Object.keys(entries).length });
     toast("Workout saved 💪");
     go("progress");
   }
@@ -769,6 +772,8 @@ export function initTracker() {
 
     let members = [];
     try { members = await getMembers(squad.id); } catch {}
+    let feed = [];
+    try { feed = await getFeed(squad.id); } catch {}
     const memberRows = members.map(m => {
       const p = m.profiles || {};
       const nm = p.name || p.username || "Member";
@@ -787,7 +792,36 @@ export function initTracker() {
       </div>
       <div class="subhead">Members</div>
       <div class="card">${memberRows || '<div class="empty">No members yet.</div>'}</div>
-      <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:8px">↩ Leave squad</button>`;
+      <div class="subhead">Squad activity</div>
+      <div class="feed">${renderFeedPosts(feed, u.id)}</div>
+      <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:14px">↩ Leave squad</button>`;
+  }
+
+  function timeAgo(iso) {
+    const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (s < 60) return "just now";
+    const m = Math.floor(s / 60); if (m < 60) return m + "m ago";
+    const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
+    return Math.floor(h / 24) + "d ago";
+  }
+  function renderFeedPosts(feed, myId) {
+    if (!feed.length) return `<div class="empty" style="padding:18px">No activity yet — log a workout to kick it off.</div>`;
+    return feed.map(p => {
+      const name = p.profiles?.name || p.profiles?.username || "Someone";
+      const text = p.type === "workout"
+        ? `completed <b>${esc(p.data?.title || "a workout")}</b>${p.data?.exercises ? ` · ${p.data.exercises} exercises` : ""}`
+        : `<b>${esc(p.data?.title || "did something")}</b>`;
+      const reax = p.activity_reactions || [];
+      const btns = REACTIONS.map(e => {
+        const n = reax.filter(r => r.emoji === e).length;
+        const mine = reax.some(r => r.emoji === e && r.user_id === myId);
+        return `<button class="reax ${mine ? "on" : ""}" data-act="react" data-pid="${p.id}" data-emoji="${e}">${e}${n ? " " + n : ""}</button>`;
+      }).join("");
+      return `<div class="feed-post">
+        <div class="feed-h"><span class="sq-av sm">${esc((name[0] || "?").toUpperCase())}</span>
+          <span class="feed-t"><b>${esc(name)}</b> ${text}<small>${timeAgo(p.created_at)}</small></span></div>
+        <div class="feed-reax">${btns}</div></div>`;
+    }).join("");
   }
 
   function renderSquadJoin() {
@@ -965,6 +999,9 @@ export function initTracker() {
       const code = el.dataset.code;
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(() => toast("Code copied")).catch(() => toast("Code: " + code));
       else toast("Code: " + code);
+    }
+    else if (act === "react") {
+      toggleReaction(el.dataset.pid, cachedUser().id, el.dataset.emoji).then(() => renderSquad()).catch(() => {});
     }
   });
 

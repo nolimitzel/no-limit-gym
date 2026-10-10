@@ -15,6 +15,8 @@ import { loadProgramme } from "./data/programmeStore.js";
 import { setActiveProgramme } from "./data/programme.js";
 import { loadTargets } from "./data/targets.js";
 import { setActiveTargets } from "./data/targets.js";
+import { getMySquad } from "./data/squad.js";
+import { setCurrentSquad } from "./data/social.js";
 
 const LEGACY_KEY = "gymtracker.v1";                       // pre-2.0 single-user blob
 
@@ -22,6 +24,7 @@ async function bootApp(user) {
   const [prog, tg] = await Promise.all([loadProgramme(user.id), loadTargets(user.id)]);
   setActiveProgramme(prog);                                // this user's programme (local-first)
   setActiveTargets(tg);                                    // this user's nutrition targets
+  getMySquad(user.id).then(sq => setCurrentSquad(sq?.id)).catch(() => {}); // cache squad for activity posts
   try {
     // 1) one-time legacy migration — the first account on this device claims it
     const legacyRaw = localStorage.getItem(LEGACY_KEY);
