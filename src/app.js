@@ -3,12 +3,13 @@
    ========================================================================== */
 import { PLAN } from "./data.js";
 import { signOut, cachedUser } from "./auth/auth.js";
+import { pushWorkout, pushBodyweight, pushMacros } from "./data/cloudStore.js";
 
 let _booted = false;
 export function initTracker() {
   if (_booted) return;
   _booted = true;
-  const KEY = "gymtracker.v1";
+  const KEY = "gymtracker.v1:" + (cachedUser()?.id || "local");  // per-user local cache
   const P = PLAN;
   const SESSION_IDS = ["push", "back", "legs", "chestshoulders", "arms"];
   const NUMS = { push: 1, back: 2, legs: 3, chestshoulders: 5, arms: 6 }; // schedule day #s
@@ -307,6 +308,8 @@ export function initTracker() {
     });
     if (count === 0) { toast("Log at least one set"); return; }
     upsertLog(todayStr(), session, entries);
+    const u = cachedUser();
+    if (u) pushWorkout(u.id, { date: todayStr(), session, entries }).catch(() => {});
     toast("Workout saved 💪");
     go("progress");
   }
@@ -732,7 +735,9 @@ export function initTracker() {
       if (isNaN(v)) { toast("Enter a weight"); return; }
       const t = todayStr(); const ex = DB.body.find(b => b.date === t);
       if (ex) ex.weight = v; else DB.body.push({ date: t, weight: v });
-      DB.body.sort((a, b) => (a.date < b.date ? -1 : 1)); save(); toast("Weight saved"); renderLog();
+      DB.body.sort((a, b) => (a.date < b.date ? -1 : 1)); save();
+      { const u = cachedUser(); if (u) pushBodyweight(u.id, { date: t, weight: v }).catch(() => {}); }
+      toast("Weight saved"); renderLog();
     }
     else if (act === "savemacro") {
       const k = parseInt(document.getElementById("kcal").value, 10);
@@ -740,7 +745,9 @@ export function initTracker() {
       const t = todayStr(); let m = DB.macros.find(x => x.date === t);
       if (!m) { m = { date: t, kcal: 0, protein: 0 }; DB.macros.push(m); }
       m.kcal = isNaN(k) ? 0 : k; m.protein = isNaN(p) ? 0 : p;
-      DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1)); save(); toast("Fuel logged"); renderLog();
+      DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1)); save();
+      { const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein }).catch(() => {}); }
+      toast("Fuel logged"); renderLog();
     }
     else if (act === "ics") { download("gym-reminders.ics", buildICS(), "text/calendar"); toast("Open the file to add to Calendar"); }
     else if (act === "export") { download("gym-backup-" + todayStr() + ".json", JSON.stringify(DB, null, 2), "application/json"); toast("Backup downloaded"); }

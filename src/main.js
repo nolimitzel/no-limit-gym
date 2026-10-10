@@ -1,6 +1,8 @@
 /* NO LIMIT — app entry & auth gate.
-   Flow: session? → (needs onboarding? → onboarding) → tracker.  No session → auth screens.
-   The existing tracker still runs on localStorage in this slice; cloud sync lands next. */
+   Flow: session? → (needs onboarding? → onboarding) → hydrate cloud → tracker.
+   Local-first: each user has a namespaced localStorage cache; the cloud is the
+   source of truth. A one-time migration lifts pre-2.0 local data into the first
+   account that logs in on this device. Cloud failures never block the app. */
 import "./styles.css";
 import { initTracker } from "./app.js";
 import { supabase } from "./data/supabaseClient.js";
@@ -8,19 +10,40 @@ import { getSession } from "./auth/auth.js";
 import { mountAuth } from "./auth/authUI.js";
 import { needsOnboarding } from "./auth/profile.js";
 import { mountOnboarding } from "./auth/onboarding.js";
+import { loadAll, migrateLocal } from "./data/cloudStore.js";
 
-function bootApp() {
+const LEGACY_KEY = "gymtracker.v1";                       // pre-2.0 single-user blob
+
+async function bootApp(user) {
+  try {
+    // 1) one-time legacy migration — the first account on this device claims it
+    const legacyRaw = localStorage.getItem(LEGACY_KEY);
+    if (legacyRaw && !localStorage.getItem("nl-legacy-claimed")) {
+      const legacy = JSON.parse(legacyRaw);
+      if ((legacy.logs || []).length || (legacy.body || []).length || (legacy.macros || []).length) {
+        const r = await migrateLocal(user.id, legacy);
+        console.info("[NO LIMIT] migrated local data →", r);
+      }
+      localStorage.setItem("nl-legacy-claimed", user.id);
+    }
+    // 2) hydrate this user's namespaced cache from the cloud
+    const cloud = await loadAll(user.id);
+    localStorage.setItem(LEGACY_KEY + ":" + user.id, JSON.stringify(cloud));
+  } catch (e) {
+    console.warn("[NO LIMIT] cloud unavailable — using local cache.", e);
+  }
   document.body.classList.remove("chrome-hidden");
   initTracker();
 }
 
 async function routeAuthed(session) {
-  if (await needsOnboarding(session.user.id)) mountOnboarding(session.user, bootApp);
-  else bootApp();
+  const user = session.user;
+  if (await needsOnboarding(user.id)) mountOnboarding(user, () => bootApp(user));
+  else bootApp(user);
 }
 
 async function start() {
-  if (!supabase) { bootApp(); return; }          // no backend configured → local-only fallback
+  if (!supabase) { document.body.classList.remove("chrome-hidden"); initTracker(); return; }
   const session = await getSession();
   if (session) routeAuthed(session);
   else mountAuth(routeAuthed);
