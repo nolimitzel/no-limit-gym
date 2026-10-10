@@ -1,0 +1,12 @@
+# Netlify headers — correct MIME + keep the service worker fresh
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json; charset=utf-8
+
+# Never cache the service worker or app code, so updates always reach the phone
+/sw.js
+  Cache-Control: no-cache
+/app.js
+  Cache-Control: no-cache
+/data.js
+  Cache-Control: no-cache
