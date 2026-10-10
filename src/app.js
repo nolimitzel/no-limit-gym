@@ -2,9 +2,12 @@
    NO LIMIT — Gym Tracker  (offline, on-device PWA)
    ========================================================================== */
 import { PLAN } from "./data.js";
+import { signOut, cachedUser } from "./auth/auth.js";
 
-(function () {
-  "use strict";
+let _booted = false;
+export function initTracker() {
+  if (_booted) return;
+  _booted = true;
   const KEY = "gymtracker.v1";
   const P = PLAN;
   const SESSION_IDS = ["push", "back", "legs", "chestshoulders", "arms"];
@@ -660,8 +663,12 @@ import { PLAN } from "./data.js";
       <input id="importfile" type="file" accept="application/json" style="display:none">
       <button class="linkbtn" data-act="reset" style="border-color:#5a3030">🗑 Reset all data
         <small>Erase every log and start fresh. Cannot be undone.</small></button>
-      <div style="text-align:center;color:var(--muted2);font-size:11px;margin-top:18px">
-        No Limit · Gym Tracker — every muscle, every head, no excuses.</div>`;
+      <div class="subhead">Account</div>
+      <div class="card"><div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Signed in as</div>
+        <div style="font-family:var(--cond);font-size:16px;margin-top:3px">${esc(cachedUser()?.email || "—")}</div></div>
+      <button class="linkbtn" data-act="logout" style="border-color:#5a3030">↩ Log out</button>
+      <div style="text-align:center;color:var(--dim);font-size:11px;margin-top:18px">
+        No Limit — every muscle, every head, no excuses.</div>`;
 
     view().innerHTML = html;
   }
@@ -766,6 +773,9 @@ import { PLAN } from "./data.js";
         if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 60);
     }
+    else if (act === "logout") {
+      if (confirm("Log out of No Limit?")) signOut().then(() => location.reload());
+    }
   });
 
   document.addEventListener("change", function (e) {
@@ -792,5 +802,4 @@ import { PLAN } from "./data.js";
   ensureAnchor();
   renderHeader();
   go("today");
-  // Service worker is auto-registered by vite-plugin-pwa (see vite.config.js).
-})();
+}
