@@ -106,12 +106,25 @@ function openPicker(dayIndex) {
   ov.innerHTML = `<div class="ed-pbox">
     <div class="ed-ptop"><b>Add exercise</b><button class="ed-pclose">✕</button></div>
     <input class="ed-search" placeholder="Search exercises…" autocapitalize="none">
+    <div class="ed-create"><input class="ed-cin" placeholder="…or create your own" autocapitalize="words">
+      <button class="ed-cadd">Create</button></div>
     <div class="ed-plist">${pickerList("")}</div></div>`;
   document.body.appendChild(ov);
 
   const close = () => ov.remove();
   ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
   ov.querySelector(".ed-pclose").addEventListener("click", close);
+
+  // create a custom exercise (stored in the programme itself)
+  const cin = ov.querySelector(".ed-cin");
+  const addCustom = () => {
+    const name = cin.value.trim(); if (!name) return;
+    const s = daySession(dayIndex);
+    if (s) s.exercises.push({ id: "custom-" + Math.random().toString(36).slice(2, 8), name, target: "Custom", sets: 3, reps: "10–12" });
+    close(); render();
+  };
+  ov.querySelector(".ed-cadd").addEventListener("click", addCustom);
+  cin.addEventListener("keydown", (e) => { if (e.key === "Enter") addCustom(); });
   const search = ov.querySelector(".ed-search");
   const list = ov.querySelector(".ed-plist");
   search.addEventListener("input", () => { list.innerHTML = pickerList(search.value.toLowerCase()); bindItems(); });

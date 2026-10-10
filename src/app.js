@@ -372,6 +372,31 @@ export function initTracker() {
       html += `<div class="empty">Your heaviest set on each lift will appear here.</div>`;
     }
     html += `</div>`;
+    html += `<button class="linkbtn" data-act="history" style="margin-top:14px">📅 View full workout history
+      <small>Every session you've logged, by date.</small></button>`;
+    view().innerHTML = html;
+  }
+
+  /* ============================ HISTORY ============================ */
+  function renderHistory() {
+    const logs = DB.logs.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+    let html = `<div class="section-label">Your log</div><h1 class="h-title">History</h1>
+      <p class="h-sub">Every session you've logged.</p>
+      <button class="linkbtn" data-act="backprogress" style="margin-bottom:16px">‹ Back to progress</button>`;
+    if (!logs.length) html += `<div class="empty">No workouts logged yet. Train a session and it'll show here.</div>`;
+    logs.forEach(l => {
+      const s = P.sessions[l.session];
+      const name = s ? (s.full || s.name) : l.session;
+      const rows = Object.entries(l.entries).map(([id, sets]) => {
+        const nm = exMeta(id).name;
+        const top = sets.reduce((m, x) => (x.w > m.w ? x : m), sets[0]);
+        const label = isCardio(id) ? `${top.w} min · ${top.r} rounds` : `${sets.length} × ${top.w}kg`;
+        return `<div class="hist-ex"><span>${esc(nm)}</span><span class="hist-m">${esc(label)}</span></div>`;
+      }).join("");
+      html += `<div class="hist-card">
+        <div class="hist-h"><b>${esc(name)}</b><span class="hist-date">${esc(prettyDate(l.date))}</span></div>
+        ${rows}</div>`;
+    });
     view().innerHTML = html;
   }
   let ACTIVE_LIFT = null;
@@ -787,6 +812,8 @@ export function initTracker() {
       if (confirm("Log out of No Limit?")) signOut().then(() => location.reload());
     }
     else if (act === "editprog") openEditor(() => go("plan"));
+    else if (act === "history") renderHistory();
+    else if (act === "backprogress") go("progress");
   });
 
   document.addEventListener("change", function (e) {
