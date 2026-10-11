@@ -22,6 +22,17 @@ export async function getFeed(squadId) {
   return data || [];
 }
 
+// workout activity in a window — used to rank squad members by consistency
+export async function getWorkoutPosts(squadId, sinceIso) {
+  let q = supabase.from("activity_posts")
+    .select("user_id,created_at,profiles(username,name)")
+    .eq("squad_id", squadId).eq("type", "workout");
+  if (sinceIso) q = q.gte("created_at", sinceIso);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
 export async function toggleReaction(postId, userId, emoji) {
   const { data } = await supabase.from("activity_reactions")
     .select("id").match({ post_id: postId, user_id: userId, emoji });

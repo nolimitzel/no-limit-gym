@@ -380,3 +380,14 @@ body.chrome-hidden #view{padding:0}
 .toggle i{position:absolute;top:2px;left:2px;width:21px;height:21px;border-radius:50%;background:var(--dim);transition:left .15s,background .15s}
 .toggle.on{background:var(--volt-ghost);border-color:var(--volt)}
 .toggle.on i{left:21px;background:var(--volt)}
+
+/* leaderboard */
+.lb-head{display:flex;align-items:center;justify-content:space-between}
+.lb-range{display:flex;gap:4px}
+.lb-r{font-size:10px;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line2);border-radius:4px;padding:4px 8px}
+.lb-r.on{background:var(--volt-ghost);border-color:var(--volt);color:var(--volt)}
+.lb-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.lb-row:last-child{border-bottom:none}
+.lb-rank{width:28px;text-align:center;font-family:var(--cond);font-size:17px;font-variant-numeric:tabular-nums;color:var(--muted)}
+.lb-name{flex:1;font-size:14px;font-weight:600}
+.lb-n{font-family:var(--cond);font-variant-numeric:tabular-nums;color:var(--volt);font-size:14px;white-space:nowrap}

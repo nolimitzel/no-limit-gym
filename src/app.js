@@ -7,7 +7,7 @@ import { getActiveProgramme } from "./data/programme.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { openEditor } from "./programme/editor.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
-import { getCurrentSquad, postActivity, getFeed, toggleReaction, REACTIONS } from "./data/social.js";
+import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS } from "./data/social.js";
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
 
 let _booted = false;
@@ -769,6 +769,15 @@ export function initTracker() {
   }
 
   /* ============================ SQUAD ============================ */
+  let LB_RANGE = 7;  // leaderboard window in days (0 = all time)
+  function renderLeaderboard(ranked) {
+    if (!ranked.length) return `<div class="empty" style="padding:14px">No workouts logged in this window yet.</div>`;
+    const medal = i => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "" + (i + 1));
+    return ranked.map((r, i) => `<div class="lb-row">
+      <span class="lb-rank">${medal(i)}</span>
+      <span class="lb-name">${esc(r.name)}</span>
+      <span class="lb-n">${r.n} workout${r.n === 1 ? "" : "s"}</span></div>`).join("");
+  }
   async function renderSquad() {
     const u = cachedUser();
     view().innerHTML = `<div class="section-label">Your people</div><h1 class="h-title">Squad</h1>
@@ -786,6 +795,14 @@ export function initTracker() {
     try { members = await getMembers(squad.id); } catch {}
     let feed = [];
     try { feed = await getFeed(squad.id); } catch {}
+    let ranked = [];
+    try {
+      const sinceIso = LB_RANGE ? new Date(Date.now() - LB_RANGE * 86400000).toISOString() : null;
+      const wp = await getWorkoutPosts(squad.id, sinceIso);
+      const counts = {};
+      wp.forEach(p => { (counts[p.user_id] ||= { name: p.profiles?.name || p.profiles?.username || "Member", n: 0 }).n++; });
+      ranked = Object.values(counts).sort((a, b) => b.n - a.n);
+    } catch {}
     const memberRows = members.map(m => {
       const p = m.profiles || {};
       const nm = p.name || p.username || "Member";
@@ -804,6 +821,9 @@ export function initTracker() {
       </div>
       <div class="subhead">Members</div>
       <div class="card">${memberRows || '<div class="empty">No members yet.</div>'}</div>
+      <div class="subhead lb-head">Leaderboard
+        <span class="lb-range">${[[7, "7D"], [30, "30D"], [0, "All"]].map(([v, l]) => `<button class="lb-r ${(LB_RANGE || 0) === v ? "on" : ""}" data-act="lbrange" data-d="${v}">${l}</button>`).join("")}</span></div>
+      <div class="card">${renderLeaderboard(ranked)}</div>
       <div class="subhead">Squad activity</div>
       <div class="feed">${renderFeedPosts(feed, u.id)}</div>
       <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:14px">↩ Leave squad</button>`;
@@ -1015,6 +1035,7 @@ export function initTracker() {
     else if (act === "react") {
       toggleReaction(el.dataset.pid, cachedUser().id, el.dataset.emoji).then(() => renderSquad()).catch(() => {});
     }
+    else if (act === "lbrange") { LB_RANGE = parseInt(el.dataset.d, 10) || 0; renderSquad(); }
     else if (act === "togglepriv") {
       const key = el.dataset.key;
       setPrivacy(cachedUser().id, { [key]: !getPrivacy()[key] });
