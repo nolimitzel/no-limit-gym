@@ -6,6 +6,14 @@ export async function getProfile(userId) {
   return data;
 }
 
+export async function updateProfileBasics(userId, { name, username }) {
+  const patch = {};
+  if (name != null) patch.name = name;
+  if (username != null) patch.username = username;
+  const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
+  if (error) throw error;
+}
+
 // A user still needs onboarding until they've set a goal.
 export async function needsOnboarding(userId) {
   const p = await getProfile(userId);

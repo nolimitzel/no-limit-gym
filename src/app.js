@@ -8,6 +8,7 @@ import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.
 import { openEditor } from "./programme/editor.js";
 import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
+import { getProfile, updateProfileBasics } from "./auth/profile.js";
 import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
@@ -148,7 +149,7 @@ export function initTracker() {
     TAB = tab; ACTIVE = (opts && opts.session) || ACTIVE;
     document.querySelectorAll(".tabbar button").forEach(b =>
       b.classList.toggle("active", b.dataset.tab === tab));
-    ({ today: renderToday, train: renderTrain, progress: renderProgress, log: renderLog, plan: renderPlan, squad: renderSquad }[tab])();
+    ({ today: renderToday, train: renderTrain, progress: renderProgress, log: renderLog, plan: renderPlan, squad: renderSquad, profile: renderProfile }[tab])();
     window.scrollTo(0, 0);
   }
 
@@ -157,7 +158,10 @@ export function initTracker() {
     document.getElementById("hdate").innerHTML =
       "<b>" + prettyDate(todayStr()).split(",")[0] + "</b>" +
       parseYmd(todayStr()).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const av = document.getElementById("hdr-av");
+    if (av) av.textContent = (PROFILE?.name || PROFILE?.username || cachedUser()?.email || "?").trim()[0].toUpperCase();
   }
+  let PROFILE = null;  // cached profile (name/username/goal) for header + profile screen
 
   /* ============================ TODAY ============================ */
   function isStandalone() {
@@ -797,6 +801,82 @@ export function initTracker() {
     view().innerHTML = html;
   }
 
+  /* ============================ PROFILE ============================ */
+  function myWeekStreak() {
+    const weeks = new Set(DB.logs.map(l => weekStartISO(parseYmd(l.date))));
+    if (!weeks.size) return 0;
+    let streak = 0, cur = weekStartISO();
+    if (weeks.has(cur)) streak++;
+    cur = prevWeekISO(cur);
+    while (weeks.has(cur)) { streak++; cur = prevWeekISO(cur); }
+    return streak;
+  }
+  const GOAL_LABELS = { lean_gain: "Lean gain", fat_loss: "Fat loss", strength: "Strength", maintain: "Maintain" };
+  async function renderProfile() {
+    const u = cachedUser();
+    if (!PROFILE && u) { try { PROFILE = await getProfile(u.id); renderHeader(); } catch {} }
+    const p = PROFILE || {};
+    const name = p.name || p.username || (u?.email || "Athlete").split("@")[0];
+    const uname = p.username ? "@" + p.username : "";
+    const init = (name.trim()[0] || "?").toUpperCase();
+
+    const total = DB.logs.length;
+    const lifted = []; const seen = new Set();
+    DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!seen.has(id) && !isCardio(id)) { seen.add(id); lifted.push(id); } }));
+    const prCount = lifted.filter(id => { const pr = prFor(id); return pr && pr.w > 0; }).length;
+    const streak = myWeekStreak();
+    const bw = DB.body.length ? DB.body[DB.body.length - 1].weight : null;
+    const since = DB.logs.length ? DB.logs.map(l => l.date).sort()[0] : (u?.created_at || null);
+    const sinceTxt = since ? new Date(since).toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "—";
+    const goalTxt = GOAL_LABELS[p.goal] || null;
+    const mus = getMusic();
+    const stat = (v, l) => `<div class="stat"><div class="n">${v}</div><div class="l">${l}</div></div>`;
+
+    let html = `<div class="section-label">Your profile</div>
+      <div class="prof-head">
+        <span class="prof-av">${esc(init)}</span>
+        <div class="prof-id"><h1 class="prof-name">${esc(name)}</h1>
+          ${uname ? `<div class="prof-handle">${esc(uname)}</div>` : ""}
+          <div class="prof-since">Member since ${esc(sinceTxt)}</div></div>
+        <button class="lb-r" data-act="editprofile">Edit</button>
+      </div>
+      <div class="prof-stats">
+        ${stat(total, "Workouts")}
+        ${stat(prCount, "PRs")}
+        ${stat(streak ? streak + " 🔥" : "0", "Week streak")}
+        ${stat(bw != null ? bw + "<small>kg</small>" : "—", "Bodyweight")}
+      </div>`;
+
+    if (goalTxt || p.bw_target) {
+      html += `<div class="subhead">Your goal</div><div class="card prof-goal">
+        ${goalTxt ? `<span class="goal-chip">${esc(goalTxt)}</span>` : ""}
+        ${(p.bw_current || p.bw_target) ? `<span class="goal-bw">${esc(String(p.bw_current || bw || "—"))}kg → <b>${esc(String(p.bw_target || "—"))}kg</b></span>` : ""}
+      </div>`;
+    }
+
+    html += `<div class="subhead">Yours</div>
+      <button class="linkbtn" data-act="gosquad">👥 Your squad<small>Leaderboard, challenges, accountability</small></button>
+      ${mus.url
+        ? `<a class="linkbtn" href="${esc(safeMusicUrl(mus.url) || "#")}" target="_blank" rel="noopener noreferrer">🎧 ${esc(mus.label || "Your soundtrack")}<small>Open your training playlist</small></a>`
+        : `<button class="linkbtn" data-act="goplan">🎧 Set your soundtrack<small>Share a playlist with your squad</small></button>`}
+      <div class="subhead">Account</div>
+      <div class="card"><div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Signed in as</div>
+        <div style="font-family:var(--cond);font-size:16px;margin-top:3px">${esc(u?.email || "—")}</div></div>
+      <button class="linkbtn" data-act="logout" style="border-color:#5a3030;margin-top:12px">↩ Log out</button>`;
+
+    view().innerHTML = html;
+  }
+  function openProfileEdit() {
+    const p = PROFILE || {};
+    const ov = document.createElement("div"); ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box"><div class="modal-head"><b>Edit profile</b><span class="mx" data-act="closemodal">✕</span></div>
+      <label class="fld"><span>Name</span><input id="pf-name" value="${esc(p.name || "")}" maxlength="40"></label>
+      <label class="fld"><span>Username</span><input id="pf-user" value="${esc(p.username || "")}" maxlength="20" autocapitalize="none" placeholder="username"></label>
+      <button class="btn" data-act="saveprofile" style="width:100%;margin-top:4px">Save</button></div>`;
+    document.body.appendChild(ov);
+    setTimeout(() => document.getElementById("pf-name")?.focus(), 30);
+  }
+
   /* ============================ SQUAD ============================ */
   let LB_RANGE = 7;  // leaderboard window in days (0 = all time)
   function renderLeaderboard(ranked) {
@@ -1196,6 +1276,19 @@ export function initTracker() {
       if (confirm("Log out of No Limit?")) signOut().then(() => location.reload());
     }
     else if (act === "editprog") openEditor(() => go("plan"));
+    else if (act === "profile") go("profile");
+    else if (act === "gosquad") go("squad");
+    else if (act === "goplan") go("plan");
+    else if (act === "editprofile") openProfileEdit();
+    else if (act === "saveprofile") {
+      const name = (document.getElementById("pf-name")?.value || "").trim();
+      const username = (document.getElementById("pf-user")?.value || "").trim().replace(/[^a-z0-9_]/gi, "");
+      if (!name) { toast("Add a name"); return; }
+      el.disabled = true;
+      updateProfileBasics(cachedUser().id, { name, username: username || null })
+        .then(() => { PROFILE = { ...(PROFILE || {}), name, username: username || null }; el.closest(".modal")?.remove(); renderHeader(); toast("Profile updated"); renderProfile(); })
+        .catch(e => { el.disabled = false; toast(/duplicate|unique/i.test(e?.message || "") ? "That username is taken" : "Couldn't save"); });
+    }
     else if (act === "loadsplit") {
       if (!confirm("Load the 8 muscle-group sessions? This replaces your current programme structure (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged workout history stays — only the plan layout changes.")) return;
       const u = cachedUser();
@@ -1309,5 +1402,6 @@ export function initTracker() {
   /* ---------- boot ---------- */
   ensureAnchor();
   renderHeader();
+  if (cachedUser()) getProfile(cachedUser().id).then(pr => { PROFILE = pr; renderHeader(); }).catch(() => {});
   go("today");
 }

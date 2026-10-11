@@ -27,7 +27,27 @@ a{color:var(--volt)}
   padding:calc(env(safe-area-inset-top,0px) + 15px) 18px 13px;border-bottom:1px solid var(--line)}
 .app-header .row{display:flex;align-items:center;justify-content:space-between}
 .brand{display:flex;align-items:center;gap:10px}
-.brand-logo{height:40px;width:auto;display:block}
+.brand-logo{height:54px;width:auto;display:block;margin:-4px 0}
+.hdr-right{display:flex;align-items:center;gap:12px}
+.hdr-av{width:34px;height:34px;flex-shrink:0;border-radius:50%;border:1px solid var(--line2);
+  background:var(--volt-ghost);color:var(--volt);font-family:var(--cond);font-weight:700;font-size:15px;
+  display:flex;align-items:center;justify-content:center;text-transform:uppercase}
+.hdr-av:active{border-color:var(--volt)}
+
+/* ---------- profile ---------- */
+.prof-head{display:flex;align-items:center;gap:14px;margin:4px 0 20px}
+.prof-av{width:60px;height:60px;flex-shrink:0;border-radius:50%;background:var(--volt);color:#0A0B0A;
+  font-family:var(--cond);font-weight:700;font-size:28px;display:flex;align-items:center;justify-content:center}
+.prof-id{flex:1;min-width:0}
+.prof-name{font-family:var(--cond);font-weight:700;font-size:26px;text-transform:uppercase;letter-spacing:.02em;line-height:1.05;margin:0}
+.prof-handle{color:var(--volt);font-size:13px;margin-top:2px}
+.prof-since{color:var(--muted);font-size:12px;margin-top:3px}
+.prof-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px}
+.prof-stats .stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px}
+.prof-goal{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.goal-chip{font-family:var(--cond);text-transform:uppercase;letter-spacing:.03em;font-size:14px;
+  color:var(--volt);background:var(--volt-ghost);padding:5px 12px;border-radius:6px}
+.goal-bw{font-family:var(--cond);font-variant-numeric:tabular-nums;font-size:16px;color:var(--ink)}
 .brand .dot{width:27px;height:27px;border-radius:5px;background:var(--volt);
   display:flex;align-items:center;justify-content:center;color:#0A0B0A;
   font-family:var(--cond);font-weight:700;font-size:18px}
