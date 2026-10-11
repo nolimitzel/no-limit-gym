@@ -150,6 +150,7 @@ export function initTracker() {
     document.querySelectorAll(".tabbar button").forEach(b =>
       b.classList.toggle("active", b.dataset.tab === tab));
     ({ today: renderToday, train: renderTrain, progress: renderProgress, log: renderLog, plan: renderPlan, squad: renderSquad, profile: renderProfile }[tab])();
+    const v = view(); v.classList.remove("viewin"); void v.offsetWidth; v.classList.add("viewin"); // restart fade-in
     window.scrollTo(0, 0);
   }
 
@@ -1034,7 +1035,8 @@ export function initTracker() {
   async function renderSquad() {
     const u = cachedUser();
     view().innerHTML = `<div class="section-label">Your people</div><h1 class="h-title">Squad</h1>
-      <div class="empty" style="padding:30px">Loading…</div>`;
+      <div class="card"><div class="skel skel-row" style="width:55%"></div><div class="skel skel-row" style="width:80%"></div></div>
+      <div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card" style="width:70%"></div>`;
     let squad;
     try { squad = await getMySquad(u.id); }
     catch (e) {

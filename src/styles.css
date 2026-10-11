@@ -48,6 +48,22 @@ a{color:var(--volt)}
 .goal-chip{font-family:var(--cond);text-transform:uppercase;letter-spacing:.03em;font-size:14px;
   color:var(--volt);background:var(--volt-ghost);padding:5px 12px;border-radius:6px}
 .goal-bw{font-family:var(--cond);font-variant-numeric:tabular-nums;font-size:16px;color:var(--ink)}
+
+/* ---------- 9b: motion & states ---------- */
+@keyframes viewin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.viewin{animation:viewin .22s cubic-bezier(.22,.61,.36,1)}
+@media (prefers-reduced-motion:reduce){.viewin{animation:none}}
+/* tactile press feedback */
+.btn,.pick,.linkbtn,.lb-r,.reax,.ac-nudge,.sq-member,.spot-item,.mus-row,.ch-x,.hdr-av,.toggle{transition:transform .08s ease}
+.btn:active,.pick:active,.linkbtn:active,.spot-item:active,.mus-row:active{transform:scale(.985)}
+.lb-r:active,.reax:active,.ac-nudge:active,.ch-x:active,.hdr-av:active{transform:scale(.92)}
+/* skeleton loaders */
+@keyframes shimmer{0%{background-position:-460px 0}100%{background-position:460px 0}}
+.skel{border-radius:8px;background:linear-gradient(90deg,var(--surface) 0%,var(--line2) 20%,var(--surface) 40%,var(--surface) 100%);
+  background-size:920px 100%;animation:shimmer 1.25s linear infinite}
+.skel-row{height:16px;margin:10px 0}
+.skel-card{height:64px;margin-bottom:10px}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
 .brand .dot{width:27px;height:27px;border-radius:5px;background:var(--volt);
   display:flex;align-items:center;justify-content:center;color:#0A0B0A;
   font-family:var(--cond);font-weight:700;font-size:18px}
