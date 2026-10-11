@@ -6,6 +6,7 @@ import { pushWorkout, pushBodyweight, pushMacros } from "./data/cloudStore.js";
 import { getActiveProgramme } from "./data/programme.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { openEditor } from "./programme/editor.js";
+import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
 import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
@@ -272,9 +273,10 @@ export function initTracker() {
   function cardioCardHtml(ex, existing) {
     const pv = existing && existing.entries[ex.id] && existing.entries[ex.id][0]
       ? existing.entries[ex.id][0] : null;
+    const meta = ex.id === "hiit" ? P.cardio.protocol : (ex.target || "Cardio");
     return `<div class="ex cardio" data-ex="${ex.id}">
       <div class="ex-h">
-        <div class="info"><b>🔥 ${esc(ex.name)}</b><div class="meta">${esc(P.cardio.protocol)}</div></div>
+        <div class="info"><b>🔥 ${esc(ex.name)}</b><div class="meta">${esc(meta)}</div></div>
         <div class="tgt">${esc(ex.reps)}<small>cardio</small></div>
       </div>
       <div class="sets">
@@ -293,7 +295,7 @@ export function initTracker() {
     SESSION_IDS.forEach(id => {
       const s = P.sessions[id];
       html += `<button class="pick" data-act="pick" data-s="${id}">
-        <span class="num">D${NUMS[id]}</span>
+        <span class="num">${NUMS[id] ? "D" + NUMS[id] : "•"}</span>
         <span class="txt"><b>${esc(s.full)}</b><span>${esc(s.sub)}</span></span>
         <span class="arw">›</span></button>`;
     });
@@ -750,7 +752,9 @@ export function initTracker() {
     html += `<div class="card"><div class="field"><label>What is today in your cycle? (sets your schedule)</label>
       <select class="sel" data-act="setanchor">${opts}</select></div></div>`;
 
-    html += `<button class="linkbtn" data-act="ics">📅 Add gym-day reminders to Calendar
+    html += `<button class="linkbtn" data-act="loadsplit" style="border-color:var(--volt-dim,#4a5a00)">⚡ Load the muscle-group split
+        <small>Replace your programme with the 8 sector sessions (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged history is kept.</small></button>
+      <button class="linkbtn" data-act="ics">📅 Add gym-day reminders to Calendar
         <small>Weekly alerts for each training day (.ics file for iPhone Calendar).</small></button>
       <button class="linkbtn" data-act="export">⬇︎ Back up my data
         <small>Download all your logs as a file you can keep safe.</small></button>
@@ -1050,6 +1054,14 @@ export function initTracker() {
       if (confirm("Log out of No Limit?")) signOut().then(() => location.reload());
     }
     else if (act === "editprog") openEditor(() => go("plan"));
+    else if (act === "loadsplit") {
+      if (!confirm("Load the 8 muscle-group sessions? This replaces your current programme structure (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged workout history stays — only the plan layout changes.")) return;
+      const u = cachedUser();
+      const fresh = defaultProgrammeData();
+      (u ? saveProgramme(u.id, fresh) : Promise.resolve())
+        .catch(err => console.warn("[NO LIMIT] split save cloud-sync failed (saved locally).", err?.message || err))
+        .finally(() => { toast("New split loaded 💪"); setTimeout(() => location.reload(), 500); });
+    }
     else if (act === "history") renderHistory();
     else if (act === "backprogress") go("progress");
     else if (act === "createsquad") {

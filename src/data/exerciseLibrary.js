@@ -48,23 +48,23 @@ export const EXERCISE_LIBRARY = [
   { key: "shrugs",                name: "Shrugs",                      group: "Shoulders", equipment: "Dumbbell", sets: 3, reps: "12–15" },
 
   /* ============ ARMS — BICEPS ============ */
-  { key: "incline-db-curl",       name: "Incline Dumbbell Curls",      group: "Arms", equipment: "Dumbbell", sets: 3, reps: "10–12" },   // yours
-  { key: "hammer-curl",           name: "Hammer Curls",                group: "Arms", equipment: "Dumbbell", sets: 3, reps: "12–15" },   // yours
-  { key: "single-arm-preacher-curl", name: "Single-Arm Preacher Curls", group: "Arms", equipment: "Cable",  sets: 3, reps: "10–12" },   // yours
-  { key: "barbell-curl",          name: "Barbell Curl",                group: "Arms", equipment: "Barbell",  sets: 3, reps: "8–12" },
-  { key: "ez-bar-curl",           name: "EZ-Bar Curl",                 group: "Arms", equipment: "EZ-Bar",   sets: 3, reps: "8–12" },
-  { key: "cable-curl",            name: "Cable Curl",                  group: "Arms", equipment: "Cable",    sets: 3, reps: "12–15" },
-  { key: "concentration-curl",    name: "Concentration Curl",          group: "Arms", equipment: "Dumbbell", sets: 3, reps: "10–15" },
-  { key: "preacher-curl-machine", name: "Preacher Curl (Machine)",     group: "Arms", equipment: "Machine",  sets: 3, reps: "10–12" },
+  { key: "incline-db-curl",       name: "Incline Dumbbell Curls",      group: "Biceps", equipment: "Dumbbell", sets: 3, reps: "10–12" },   // yours
+  { key: "hammer-curl",           name: "Hammer Curls",                group: "Biceps", equipment: "Dumbbell", sets: 3, reps: "12–15" },   // yours
+  { key: "single-arm-preacher-curl", name: "Single-Arm Preacher Curls", group: "Biceps", equipment: "Cable",  sets: 3, reps: "10–12" },   // yours
+  { key: "barbell-curl",          name: "Barbell Curl",                group: "Biceps", equipment: "Barbell",  sets: 3, reps: "8–12" },
+  { key: "ez-bar-curl",           name: "EZ-Bar Curl",                 group: "Biceps", equipment: "EZ-Bar",   sets: 3, reps: "8–12" },
+  { key: "cable-curl",            name: "Cable Curl",                  group: "Biceps", equipment: "Cable",    sets: 3, reps: "12–15" },
+  { key: "concentration-curl",    name: "Concentration Curl",          group: "Biceps", equipment: "Dumbbell", sets: 3, reps: "10–15" },
+  { key: "preacher-curl-machine", name: "Preacher Curl (Machine)",     group: "Biceps", equipment: "Machine",  sets: 3, reps: "10–12" },
 
   /* ============ ARMS — TRICEPS ============ */
-  { key: "tricep-pushdown",       name: "Tricep Push Down",            group: "Arms", equipment: "Cable",    sets: 3, reps: "12–15" },   // yours
-  { key: "overhead-tricep-ext",   name: "Overhead Triceps Extension",  group: "Arms", equipment: "Cable",    sets: 3, reps: "10–12" },   // yours
-  { key: "single-arm-reverse-pulldown", name: "Single-Arm Reverse Pulldown", group: "Arms", equipment: "Cable", sets: 3, reps: "12–15" }, // yours
-  { key: "close-grip-bench",      name: "Close-Grip Bench Press",      group: "Arms", equipment: "Barbell",  sets: 3, reps: "6–10" },
-  { key: "skull-crushers",        name: "Skull Crushers",              group: "Arms", equipment: "EZ-Bar",   sets: 3, reps: "8–12" },
-  { key: "rope-pushdown",         name: "Rope Pushdown",               group: "Arms", equipment: "Cable",    sets: 3, reps: "12–15" },
-  { key: "tricep-dips",           name: "Tricep Dips",                 group: "Arms", equipment: "Bodyweight", sets: 3, reps: "8–12" },
+  { key: "tricep-pushdown",       name: "Tricep Push Down",            group: "Triceps", equipment: "Cable",    sets: 3, reps: "12–15" },   // yours
+  { key: "overhead-tricep-ext",   name: "Overhead Triceps Extension",  group: "Triceps", equipment: "Cable",    sets: 3, reps: "10–12" },   // yours
+  { key: "single-arm-reverse-pulldown", name: "Single-Arm Reverse Pulldown", group: "Triceps", equipment: "Cable", sets: 3, reps: "12–15" }, // yours
+  { key: "close-grip-bench",      name: "Close-Grip Bench Press",      group: "Triceps", equipment: "Barbell",  sets: 3, reps: "6–10" },
+  { key: "skull-crushers",        name: "Skull Crushers",              group: "Triceps", equipment: "EZ-Bar",   sets: 3, reps: "8–12" },
+  { key: "rope-pushdown",         name: "Rope Pushdown",               group: "Triceps", equipment: "Cable",    sets: 3, reps: "12–15" },
+  { key: "tricep-dips",           name: "Tricep Dips",                 group: "Triceps", equipment: "Bodyweight", sets: 3, reps: "8–12" },
 
   /* ============ LEGS ============ */
   { key: "smith-squat",           name: "Smith Machine Squats",        group: "Legs", equipment: "Smith",    sets: 4, reps: "8–10" },    // yours
@@ -106,7 +106,7 @@ export const EXERCISE_LIBRARY = [
   { key: "sprints",               name: "Sprints",                     group: "Cardio", equipment: "Cardio", cardio: true, sets: 1, reps: "10 rounds" }
 ];
 
-export const MUSCLE_GROUPS = ["Chest", "Back", "Shoulders", "Arms", "Legs", "Core", "Cardio"];
+export const MUSCLE_GROUPS = ["Chest", "Shoulders", "Back", "Legs", "Biceps", "Triceps", "Core", "Cardio"];
 
 // Fast lookup by key, and a normalized entry suitable for a programme day.
 const BY_KEY = Object.fromEntries(EXERCISE_LIBRARY.map((e) => [e.key, e]));
