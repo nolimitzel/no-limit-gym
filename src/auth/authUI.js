@@ -15,7 +15,7 @@ function render(onAuthed, msg) {
   const v = view();
   v.innerHTML = `
     <div class="auth">
-      <div class="auth-brand"><span class="dot">N</span><span class="wm">NO&nbsp;LIMIT</span></div>
+      <div class="auth-brand"><img class="auth-logo" src="/brand/logo-mark.png" alt="NO LIMIT Gym"></div>
       ${screen(msg)}
     </div>`;
   wire(onAuthed);

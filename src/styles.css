@@ -27,6 +27,7 @@ a{color:var(--volt)}
   padding:calc(env(safe-area-inset-top,0px) + 15px) 18px 13px;border-bottom:1px solid var(--line)}
 .app-header .row{display:flex;align-items:center;justify-content:space-between}
 .brand{display:flex;align-items:center;gap:10px}
+.brand-logo{height:40px;width:auto;display:block}
 .brand .dot{width:27px;height:27px;border-radius:5px;background:var(--volt);
   display:flex;align-items:center;justify-content:center;color:#0A0B0A;
   font-family:var(--cond);font-weight:700;font-size:18px}
@@ -253,7 +254,8 @@ body.chrome-hidden #view{padding:0}
 .auth,.ob{min-height:100vh;max-width:430px;margin:0 auto;
   padding:40px 22px calc(40px + var(--safe-b));display:flex;flex-direction:column;justify-content:center}
 .ob{justify-content:flex-start;padding-top:calc(env(safe-area-inset-top,0px) + 30px)}
-.auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:34px}
+.auth-brand{display:flex;align-items:center;justify-content:center;margin-bottom:30px}
+.auth-logo{width:230px;max-width:72%;height:auto;display:block}
 .auth-brand .dot{width:40px;height:40px;border-radius:8px;background:var(--volt);color:#0A0B0A;
   display:flex;align-items:center;justify-content:center;font-family:var(--cond);font-weight:700;font-size:26px}
 .auth-brand .wm{font-family:var(--cond);font-weight:700;font-size:28px;letter-spacing:.04em;text-transform:uppercase}
