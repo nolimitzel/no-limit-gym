@@ -9,6 +9,7 @@ import { openEditor } from "./programme/editor.js";
 import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
 import { getProfile, updateProfileBasics } from "./auth/profile.js";
+import { uploadAvatar } from "./data/storage.js";
 import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
@@ -136,6 +137,13 @@ export function initTracker() {
   /* ---------- tiny DOM helpers ---------- */
   const view = () => document.getElementById("view");
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  // avatar: profile photo if set, else the name's initial, in a circle of class `cls`
+  function avatarMarkup(name, url, cls) {
+    const init = (String(name || "?").trim()[0] || "?").toUpperCase();
+    return url
+      ? `<span class="${cls} hasimg"><img src="${esc(url)}" alt="" loading="lazy"></span>`
+      : `<span class="${cls}">${esc(init)}</span>`;
+  }
   function toast(msg) {
     let t = document.getElementById("toast");
     if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; document.body.appendChild(t); }
@@ -161,7 +169,10 @@ export function initTracker() {
       "<b>" + prettyDate(todayStr()).split(",")[0] + "</b>" +
       parseYmd(todayStr()).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
     const av = document.getElementById("hdr-av");
-    if (av) av.textContent = (PROFILE?.name || PROFILE?.username || cachedUser()?.email || "?").trim()[0].toUpperCase();
+    if (av) {
+      if (PROFILE?.avatar_url) { av.classList.add("hasimg"); av.innerHTML = `<img src="${esc(PROFILE.avatar_url)}" alt="">`; }
+      else { av.classList.remove("hasimg"); av.textContent = (PROFILE?.name || PROFILE?.username || cachedUser()?.email || "?").trim()[0].toUpperCase(); }
+    }
   }
   let PROFILE = null;  // cached profile (name/username/goal) for header + profile screen
 
@@ -922,7 +933,9 @@ export function initTracker() {
 
     let html = `<div class="section-label">Your profile</div>
       <div class="prof-head">
-        <span class="prof-av">${esc(init)}</span>
+        <button class="prof-av-btn" data-act="avatarpick" aria-label="Change photo">
+          ${avatarMarkup(name, p.avatar_url, "prof-av")}<span class="av-cam">📷</span></button>
+        <input type="file" id="avatar-file" accept="image/*" style="display:none">
         <div class="prof-id"><h1 class="prof-name">${esc(name)}</h1>
           ${uname ? `<div class="prof-handle">${esc(uname)}</div>` : ""}
           <div class="prof-since">Member since ${esc(sinceTxt)}</div></div>
@@ -1078,7 +1091,7 @@ export function initTracker() {
       const nudge = (behind && !isMe)
         ? `<button class="ac-nudge" data-act="nudge" data-name="${esc(nm)}">👊</button>` : "";
       return `<div class="ac-row">
-        <span class="sq-av sm">${esc((nm[0] || "?").toUpperCase())}</span>
+        ${avatarMarkup(nm, p.avatar_url, "sq-av sm")}
         <span class="ac-nm">${esc(nm)}${isMe ? " <small>(you)</small>" : ""}${streakTag(streaks && streaks[uid])}</span>
         ${nudge}<span class="ac-st ${cls}">${status}</span></div>`;
     }).join("");
@@ -1092,7 +1105,7 @@ export function initTracker() {
       if (!url) return "";
       const nm = p.name || p.username || "Member";
       return `<a class="mus-row" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
-        <span class="sq-av sm">${esc((nm[0] || "?").toUpperCase())}</span>
+        ${avatarMarkup(nm, p.avatar_url, "sq-av sm")}
         <span class="mus-info"><b>${esc(nm)}</b><small>${esc(p.music_label || "Training playlist")}</small></span>
         <span class="mus-play">▶</span></a>`;
     }).filter(Boolean).join("");
@@ -1179,7 +1192,7 @@ export function initTracker() {
       const p = m.profiles || {};
       const nm = p.name || p.username || "Member";
       return `<div class="sq-member">
-        <span class="sq-av">${esc((nm[0] || "?").toUpperCase())}</span>
+        ${avatarMarkup(nm, p.avatar_url, "sq-av")}
         <span class="sq-mn"><b>${esc(nm)}</b><small>@${esc(p.username || "")}</small></span>
         ${m.role === "owner" ? '<span class="sq-role">Owner</span>' : ""}</div>`;
     }).join("");
@@ -1228,7 +1241,7 @@ export function initTracker() {
         return `<button class="reax ${mine ? "on" : ""}" data-act="react" data-pid="${p.id}" data-emoji="${e}">${e}${n ? " " + n : ""}</button>`;
       }).join("");
       return `<div class="feed-post">
-        <div class="feed-h"><span class="sq-av sm">${esc((name[0] || "?").toUpperCase())}</span>
+        <div class="feed-h">${avatarMarkup(name, p.profiles?.avatar_url, "sq-av sm")}
           <span class="feed-t"><b>${esc(name)}</b> ${text}<small>${timeAgo(p.created_at)}</small></span></div>
         <div class="feed-reax">${btns}</div></div>`;
     }).join("");
@@ -1392,6 +1405,7 @@ export function initTracker() {
     else if (act === "goplan") go("plan");
     else if (act === "goprogress") go("progress");
     else if (act === "editprofile") openProfileEdit();
+    else if (act === "avatarpick") document.getElementById("avatar-file")?.click();
     else if (act === "weekedit") openWeekEditor();
     else if (act === "saveweek") {
       const cycle = [...document.querySelectorAll(".wk-sel")]
@@ -1508,6 +1522,13 @@ export function initTracker() {
     if (!el) return;
     if (el.dataset.act === "liftsel") { ACTIVE_LIFT = el.value; document.getElementById("liftchart").innerHTML = liftChart(el.value); }
     else if (el.dataset.act === "setanchor") { setTodayAs(parseInt(el.value, 10)); toast("Schedule updated"); }
+    else if (el.id === "avatar-file" && el.files[0]) {
+      const file = el.files[0]; el.value = "";
+      toast("Uploading photo…");
+      uploadAvatar(cachedUser().id, file)
+        .then(url => { PROFILE = { ...(PROFILE || {}), avatar_url: url }; renderHeader(); toast("Photo updated 📷"); if (TAB === "profile") renderProfile(); })
+        .catch(e => toast(/bucket|not.?found|exist|policy|denied|row-level|violates/i.test(e?.message || "") ? "Run migrate_9.sql first" : "Couldn't upload that image"));
+    }
     else if (el.id === "importfile" && el.files[0]) {
       const r = new FileReader();
       r.onload = () => {

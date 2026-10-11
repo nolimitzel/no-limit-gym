@@ -16,7 +16,7 @@ export async function postActivity(userId, squadId, type, data) {
 
 export async function getFeed(squadId) {
   const { data, error } = await supabase.from("activity_posts")
-    .select("id,user_id,type,data,created_at,profiles(username,name),activity_reactions(emoji,user_id)")
+    .select("id,user_id,type,data,created_at,profiles(username,name,avatar_url),activity_reactions(emoji,user_id)")
     .eq("squad_id", squadId).order("created_at", { ascending: false }).limit(30);
   if (error) throw error;
   return data || [];

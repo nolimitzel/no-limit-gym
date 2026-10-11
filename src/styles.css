@@ -526,6 +526,13 @@ body.chrome-hidden #view{padding:0}
 .wk-row{display:flex;align-items:center;gap:12px}
 .wk-row span{width:44px;flex-shrink:0;font-family:var(--cond);font-weight:700;text-transform:uppercase;font-size:14px;color:var(--muted)}
 .wk-row .wk-sel{flex:1;min-width:0}
+/* avatars with uploaded photos */
+.hasimg{padding:0!important;overflow:hidden}
+.hasimg img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
+.prof-av-btn{position:relative;border:none;background:none;padding:0;flex-shrink:0;line-height:0}
+.av-cam{position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;
+  background:var(--volt);color:#0A0B0A;font-size:12px;display:flex;align-items:center;justify-content:center;
+  border:2px solid var(--bg)}
 /* progress snapshot */
 .snap-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .snap-k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
