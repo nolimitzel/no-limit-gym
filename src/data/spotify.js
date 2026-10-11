@@ -104,6 +104,8 @@ export async function getNowPlaying() {
       art: t.album?.images?.[0]?.url || null,
       url: t.external_urls?.spotify || null,
       playing: !!j.is_playing,
+      progress_ms: j.progress_ms || 0,
+      duration_ms: t.duration_ms || 0,
     };
   } catch { return null; }
 }

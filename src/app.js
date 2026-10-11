@@ -146,6 +146,7 @@ export function initTracker() {
   /* ---------- navigation ---------- */
   let TAB = "today", ACTIVE = null;
   function go(tab, opts) {
+    if (typeof clearNP === "function") clearNP();   // stop any now-playing ticker
     TAB = tab; ACTIVE = (opts && opts.session) || ACTIVE;
     document.querySelectorAll(".tabbar button").forEach(b =>
       b.classList.toggle("active", b.dataset.tab === tab));
@@ -209,15 +210,41 @@ export function initTracker() {
       <button class="linkbtn" data-act="goprogress">📈 Log workouts to build your progress
         <small>Your bodyweight trend and PRs will chart here.</small></button>`;
   }
+  function fmtMs(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+  let NP_TIMER = null;
+  function clearNP() { if (NP_TIMER) { clearInterval(NP_TIMER); NP_TIMER = null; } }
   function enhanceNowPlaying() {
     getNowPlaying().then(np => {
-      const el = document.getElementById("home-music");
-      if (!np || !np.name || !el) return;
-      if (np.url) el.setAttribute("href", np.url);
-      el.innerHTML = `${np.art ? `<img class="hm-art" src="${esc(np.art)}" alt="">` : `<span class="hm-art">♪</span>`}
-        <span class="hm-meta"><small>${np.playing ? "Now playing · Spotify" : "Last played · Spotify"}</small>
-          <b>${esc(np.name)}</b><i>${esc(np.artist || "")}</i></span>
-        <span class="hm-play">${np.playing ? "❚❚" : "▶"}</span>`;
+      const host = document.getElementById("home-music");
+      if (!np || !np.name || !host) return;
+      const card = document.createElement(np.url ? "a" : "div");
+      card.id = "home-music"; card.className = "np-card";
+      if (np.url) { card.href = np.url; card.target = "_blank"; card.rel = "noopener noreferrer"; }
+      card.innerHTML = `${np.art ? `<img class="np-art" src="${esc(np.art)}" alt="">` : `<span class="np-art ph">♪</span>`}
+        <div class="np-body">
+          <div class="np-label">${np.playing ? "Now playing · Spotify" : "Last played · Spotify"}</div>
+          <div class="np-track">${esc(np.name)}</div>
+          <div class="np-artist">${esc(np.artist || "")}</div>
+          <div class="np-bar"><i></i></div>
+          <div class="np-time"><span class="np-cur">0:00</span><span class="np-dur">${fmtMs(np.duration_ms)}</span></div>
+        </div>
+        <span class="np-cta">↗</span>`;
+      host.replaceWith(card);
+
+      const bar = card.querySelector(".np-bar i");
+      const cur = card.querySelector(".np-cur");
+      const dur = np.duration_ms || 1;
+      let pos = np.progress_ms || 0;
+      const paint = () => {
+        bar.style.width = Math.min(100, (pos / dur) * 100) + "%";
+        cur.textContent = fmtMs(pos);
+      };
+      paint();
+      clearNP();
+      if (np.playing) NP_TIMER = setInterval(() => { pos += 1000; if (pos > dur) pos = dur; paint(); if (pos >= dur) clearNP(); }, 1000);
     }).catch(() => {});
   }
   function renderToday() {
@@ -263,7 +290,7 @@ export function initTracker() {
     html += homeProgress();
 
     // week strip
-    html += `<div class="subhead">Your week</div><div class="week">`;
+    html += `<div class="subhead lb-head">Your week <button class="lb-r" data-act="weekedit">✎ Edit</button></div><div class="week">`;
     const base = posForDate(today);
     for (let i = 0; i < 7; i++) {
       const d = new Date(); d.setDate(d.getDate() + i);
@@ -839,15 +866,9 @@ export function initTracker() {
 
     // settings / data
     html += `<div class="subhead">Set-up &amp; data</div>`;
-    const curPos = posForDate(todayStr());
-    const opts = P.cycle.map((c, i) => {
-      const nm = c.type === "rest" ? "Rest day" : P.sessions[c.session].full;
-      return `<option value="${i}" ${i === curPos ? "selected" : ""}>${esc(nm)}</option>`;
-    }).join("");
-    html += `<div class="card"><div class="field"><label>What is today in your cycle? (sets your schedule)</label>
-      <select class="sel" data-act="setanchor">${opts}</select></div></div>`;
-
-    html += `<button class="linkbtn" data-act="loadsplit" style="border-color:var(--volt-dim,#4a5a00)">⚡ Load the muscle-group split
+    html += `<button class="linkbtn" data-act="weekedit">📅 Edit your training week
+        <small>Set which sector you train each day of the week.</small></button>
+      <button class="linkbtn" data-act="loadsplit" style="border-color:var(--volt-dim,#4a5a00)">⚡ Load the muscle-group split
         <small>Replace your programme with the 8 sector sessions (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged history is kept.</small></button>
       <button class="linkbtn" data-act="ics">📅 Add gym-day reminders to Calendar
         <small>Weekly alerts for each training day (.ics file for iPhone Calendar).</small></button>
@@ -942,6 +963,23 @@ export function initTracker() {
       <button class="btn" data-act="saveprofile" style="width:100%;margin-top:4px">Save</button></div>`;
     document.body.appendChild(ov);
     setTimeout(() => document.getElementById("pf-name")?.focus(), 30);
+  }
+
+  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  function openWeekEditor() {
+    const opts = (sel) => `<option value="__rest" ${sel === "__rest" ? "selected" : ""}>Rest</option>` +
+      SESSION_IDS.map(id => `<option value="${id}" ${sel === id ? "selected" : ""}>${esc(P.sessions[id].name)}</option>`).join("");
+    const ov = document.createElement("div"); ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box"><div class="modal-head"><b>Your week</b><span class="mx" data-act="closemodal">✕</span></div>
+      <p class="sq-ihint" style="margin:0 0 12px">Set what you train each day — this is your own schedule, rest days and all.</p>
+      <div class="wk-edit">` +
+      WEEKDAYS.map((d, i) => {
+        const c = P.cycle[i];
+        const sel = c && c.type === "train" ? c.session : "__rest";
+        return `<label class="wk-row"><span>${d}</span><select class="sel wk-sel" data-i="${i}">${opts(sel)}</select></label>`;
+      }).join("") +
+      `</div><button class="btn" data-act="saveweek" style="width:100%;margin-top:8px">Save my week</button></div>`;
+    document.body.appendChild(ov);
   }
 
   /* ============================ SQUAD ============================ */
@@ -1354,6 +1392,18 @@ export function initTracker() {
     else if (act === "goplan") go("plan");
     else if (act === "goprogress") go("progress");
     else if (act === "editprofile") openProfileEdit();
+    else if (act === "weekedit") openWeekEditor();
+    else if (act === "saveweek") {
+      const cycle = [...document.querySelectorAll(".wk-sel")]
+        .map(s => s.value === "__rest" ? { type: "rest" } : { type: "train", session: s.value });
+      const prog = getActiveProgramme();
+      DB.settings.anchorDate = mondayOnOrBefore(new Date()); DB.settings.anchorPos = 0; DB.settings.scheduleV2 = true; save();
+      el.disabled = true;
+      const u = cachedUser();
+      (u ? saveProgramme(u.id, { sessions: prog.sessions, cycle }) : Promise.resolve())
+        .catch(err => console.warn("[NO LIMIT] week save cloud-sync failed (saved locally).", err?.message || err))
+        .finally(() => { toast("Week saved 💪"); setTimeout(() => location.reload(), 450); });
+    }
     else if (act === "saveprofile") {
       const name = (document.getElementById("pf-name")?.value || "").trim();
       const username = (document.getElementById("pf-user")?.value || "").trim().replace(/[^a-z0-9_]/gi, "");
