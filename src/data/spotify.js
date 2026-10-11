@@ -5,7 +5,7 @@
    unset, so the paste-a-link fallback always works. */
 const CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
 const REDIRECT  = location.origin + "/";
-const SCOPES    = "playlist-read-private playlist-read-collaborative";
+const SCOPES    = "playlist-read-private playlist-read-collaborative user-read-currently-playing";
 const TKEY = "nl.spotify.tokens";
 const VKEY = "nl.spotify.verifier";
 const STATE = "nlspotify";
@@ -89,6 +89,23 @@ async function api(path) {
   if (r.status === 401) { disconnectSpotify(); throw new Error("expired"); }
   if (!r.ok) throw new Error("api-" + r.status);
   return r.json();
+}
+
+export async function getNowPlaying() {
+  try {
+    const tok = await freshToken(); if (!tok) return null;
+    const r = await fetch("https://api.spotify.com/v1/me/player/currently-playing", { headers: { Authorization: "Bearer " + tok } });
+    if (r.status === 204 || !r.ok) return null;   // 204 = nothing playing
+    const j = await r.json();
+    const t = j.item; if (!t) return null;
+    return {
+      name: t.name,
+      artist: (t.artists || []).map(a => a.name).join(", "),
+      art: t.album?.images?.[0]?.url || null,
+      url: t.external_urls?.spotify || null,
+      playing: !!j.is_playing,
+    };
+  } catch { return null; }
 }
 
 export async function getSpotifyProfile() { return api("/me"); }

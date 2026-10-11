@@ -14,7 +14,7 @@ import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
 import { getMyCommitment, setCommitment, getSquadCommitments, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
 import { getMusic, setMusic, safeMusicUrl } from "./data/music.js";
-import { spotifyConfigured, connectSpotify, isSpotifyConnected, disconnectSpotify, getSpotifyPlaylists } from "./data/spotify.js";
+import { spotifyConfigured, connectSpotify, isSpotifyConnected, disconnectSpotify, getSpotifyPlaylists, getNowPlaying } from "./data/spotify.js";
 
 let _booted = false;
 export function initTracker() {
@@ -168,9 +168,62 @@ export function initTracker() {
   function isStandalone() {
     return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   }
+  function greetWord() {
+    const h = new Date().getHours();
+    return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  }
+  function homeMusicCard() {
+    const mus = getMusic();
+    if (mus.url) {
+      const url = safeMusicUrl(mus.url) || "#";
+      return `<a class="home-music" id="home-music" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+        <span class="hm-art">♪</span>
+        <span class="hm-meta"><small>Your soundtrack</small><b>${esc(mus.label || "Training playlist")}</b></span>
+        <span class="hm-play">▶</span></a>`;
+    }
+    return `<button class="home-music ghost" data-act="goplan">
+      <span class="hm-art">♪</span>
+      <span class="hm-meta"><small>Music</small><b>Set your training soundtrack</b></span>
+      <span class="hm-play">+</span></button>`;
+  }
+  function homeProgress() {
+    if (DB.body.length >= 2) {
+      const last = DB.body[DB.body.length - 1].weight;
+      const d = +(last - DB.body[0].weight).toFixed(1);
+      return `<div class="subhead">Progress snapshot</div>
+        <div class="card"><div class="snap-h"><div><div class="snap-k">Bodyweight</div>
+            <div class="snap-v">${last}<small>kg</small></div></div>
+          <span class="snap-d ${d <= 0 ? "dn" : "up"}">${d > 0 ? "+" : ""}${d} kg</span></div>
+          <div class="chart">${svgLine(DB.body.map(b => ({ label: b.date, y: b.weight })), "kg")}</div></div>`;
+    }
+    const lifted = []; const seen = new Set();
+    DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!seen.has(id) && !isCardio(id)) { seen.add(id); lifted.push(id); } }));
+    const prs = lifted.map(id => ({ id, pr: prFor(id) })).filter(x => x.pr && x.pr.w > 0).sort((a, b) => b.pr.w - a.pr.w);
+    if (prs.length) {
+      const t = prs[0];
+      return `<div class="subhead">Progress snapshot</div>
+        <button class="linkbtn" data-act="goprogress">🏆 ${esc(exMeta(t.id).name)} — ${t.pr.w}kg × ${t.pr.r}
+          <small>Your heaviest lift. Tap for all PRs & trends.</small></button>`;
+    }
+    return `<div class="subhead">Progress snapshot</div>
+      <button class="linkbtn" data-act="goprogress">📈 Log workouts to build your progress
+        <small>Your bodyweight trend and PRs will chart here.</small></button>`;
+  }
+  function enhanceNowPlaying() {
+    getNowPlaying().then(np => {
+      const el = document.getElementById("home-music");
+      if (!np || !np.name || !el) return;
+      if (np.url) el.setAttribute("href", np.url);
+      el.innerHTML = `${np.art ? `<img class="hm-art" src="${esc(np.art)}" alt="">` : `<span class="hm-art">♪</span>`}
+        <span class="hm-meta"><small>${np.playing ? "Now playing · Spotify" : "Last played · Spotify"}</small>
+          <b>${esc(np.name)}</b><i>${esc(np.artist || "")}</i></span>
+        <span class="hm-play">${np.playing ? "❚❚" : "▶"}</span>`;
+    }).catch(() => {});
+  }
   function renderToday() {
     const today = todayStr();
     const c = cycleFor(today);
+    const name = (PROFILE?.name || (cachedUser()?.email || "Athlete").split("@")[0] || "Athlete").split(" ")[0];
     let html = "";
 
     if (!isStandalone() && !DB.settings.hideInstall) {
@@ -178,19 +231,39 @@ export function initTracker() {
         <b>Install me:</b> tap the Share icon in Safari, then <b>“Add to Home Screen”</b> — the app runs full-screen and works offline in the gym.</div>`;
     }
 
+    html += `<div class="home-greet"><h1>${greetWord()},<br><span>${esc(name)}</span></h1>
+      <p>Discipline builds freedom.</p></div>`;
+
+    // stat row
+    const wk = DB.logs.filter(l => dayDiff(l.date, today) >= 0 && dayDiff(l.date, today) < 7).length;
+    const streak = myWeekStreak();
+    const seen = new Set();
+    DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!isCardio(id)) seen.add(id); }));
+    const prCount = [...seen].filter(id => { const p = prFor(id); return p && p.w > 0; }).length;
+    html += `<div class="home-stats">
+      <div class="hs"><div class="n">${streak}<em>🔥</em></div><div class="l">Week streak</div></div>
+      <div class="hs"><div class="n">${wk}</div><div class="l">This week</div></div>
+      <div class="hs"><div class="n">${prCount}</div><div class="l">PRs</div></div></div>`;
+
+    // today's workout
     if (c.type === "rest") {
       html += `<div class="hero rest"><div class="kick">Today</div>
         <h2>Rest Day</h2><p>Recover, walk 8–10k steps, hydrate, hit your protein. Muscle is built now.</p></div>`;
     } else {
       const s = P.sessions[c.session];
       const done = getLog(today, c.session);
-      html += `<div class="hero"><div class="kick">Today is gym day</div>
-        <h2>${esc(s.name)}</h2><p>${esc(s.sub)}</p>
+      const n = s.exercises.length;
+      html += `<div class="hero"><div class="kick">Today's workout</div>
+        <h2>${esc(s.name)}</h2><p>${n} exercise${n === 1 ? "" : "s"} · ${esc(s.sub)}</p>
         <button class="btn" data-act="start" data-s="${c.session}">${done ? "Continue logging" : "Start workout"} →</button></div>`;
     }
 
-    // week strip (relative to today, positions 0..6 from cycle)
-    html += `<div class="week">`;
+    // music + progress
+    html += homeMusicCard();
+    html += homeProgress();
+
+    // week strip
+    html += `<div class="subhead">Your week</div><div class="week">`;
     const base = posForDate(today);
     for (let i = 0; i < 7; i++) {
       const d = new Date(); d.setDate(d.getDate() + i);
@@ -201,18 +274,11 @@ export function initTracker() {
     }
     html += `</div>`;
 
-    // quick stats
-    const wk = DB.logs.filter(l => dayDiff(l.date, today) >= 0 && dayDiff(l.date, today) < 7).length;
-    const bw = DB.body.length ? DB.body[DB.body.length - 1].weight : null;
-    html += `<div class="grid2" style="margin-top:16px">
-      <div class="stat"><div class="n">${wk}</div><div class="l">Sessions this week</div></div>
-      <div class="stat"><div class="n">${bw != null ? bw + "<span style='font-size:14px'>kg</span>" : "—"}</div><div class="l">Bodyweight</div></div>
-    </div>`;
-
     html += `<button class="linkbtn" data-act="ics" style="margin-top:14px">📅 Add gym-day reminders to iPhone Calendar
       <small>Downloads a calendar file with a weekly alert for each training day.</small></button>`;
 
     view().innerHTML = html;
+    if (isSpotifyConnected()) enhanceNowPlaying();   // swap in live Spotify track
   }
 
   /* ============================ TRAIN ============================ */
@@ -713,10 +779,10 @@ export function initTracker() {
     html += `<div class="subhead">Warm-up · every session</div><div class="card"><ul class="clean">` +
       P.warmup.map(w => `<li>${esc(w)}</li>`).join("") + `</ul></div>`;
 
-    html += `<div class="subhead">The five days</div>`;
+    html += `<div class="subhead">Your training sectors</div>`;
     SESSION_IDS.forEach(id => {
       const s = P.sessions[id];
-      html += `<div class="plan-day"><div class="ph"><span class="n">Day ${nums[id]}</span>
+      html += `<div class="plan-day"><div class="ph"><span class="n">${nums[id] ? "Day " + nums[id] : "Any day"}</span>
         <div><b>${esc(s.full)}</b><span>${esc(s.sub)}</span></div></div>` +
         s.exercises.map(e => `<div class="plan-ex"><span>${esc(e.name)}${e.isNew ? '<span class="tag-new">NEW</span>' : ""}</span>
           <span class="s">${esc(e.reps)} · ${e.sets}×</span></div>`).join("") + `</div>`;
@@ -1281,6 +1347,7 @@ export function initTracker() {
     else if (act === "profile") go("profile");
     else if (act === "gosquad") go("squad");
     else if (act === "goplan") go("plan");
+    else if (act === "goprogress") go("progress");
     else if (act === "editprofile") openProfileEdit();
     else if (act === "saveprofile") {
       const name = (document.getElementById("pf-name")?.value || "").trim();
@@ -1404,6 +1471,6 @@ export function initTracker() {
   /* ---------- boot ---------- */
   ensureAnchor();
   renderHeader();
-  if (cachedUser()) getProfile(cachedUser().id).then(pr => { PROFILE = pr; renderHeader(); }).catch(() => {});
+  if (cachedUser()) getProfile(cachedUser().id).then(pr => { PROFILE = pr; renderHeader(); if (TAB === "today") renderToday(); }).catch(() => {});
   go("today");
 }
