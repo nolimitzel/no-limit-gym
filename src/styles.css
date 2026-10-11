@@ -402,6 +402,22 @@ body.chrome-hidden #view{padding:0}
 .ch-bar i{display:block;height:100%;background:var(--volt);border-radius:99px;transition:width .4s ease}
 .ch-bar i.done{background:linear-gradient(90deg,var(--volt),#8fe600)}
 .ch-row{display:flex;gap:10px}
+
+/* ---------- accountability ---------- */
+.ac-set{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ac-setx b{font-size:14px}
+.ac-setx small{display:block;color:var(--muted);font-size:12px;margin-top:3px;line-height:1.4}
+.ac-mine-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.ac-mine-h b{font-size:14px}
+.ac-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.ac-row:last-child{border-bottom:none}
+.ac-nm{flex:1;font-size:14px;font-weight:600}
+.ac-nm small{color:var(--muted);font-weight:400}
+.ac-st{font-family:var(--cond);font-variant-numeric:tabular-nums;font-size:13px;letter-spacing:.02em;padding:3px 9px;border-radius:5px;white-space:nowrap}
+.ac-st.hit{color:var(--volt);background:var(--volt-ghost)}
+.ac-st.mid{color:#e8c547;background:rgba(232,197,71,.12)}
+.ac-st.behind{color:#e08a5a;background:rgba(224,138,90,.12)}
+.ac-st.none{color:var(--dim);background:var(--line)}
 .fld{display:block;margin-bottom:12px}
 .fld span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:5px}
 .fld input{width:100%;background:#0A0B0A;border:1px solid var(--line2);border-radius:6px;color:var(--ink);
