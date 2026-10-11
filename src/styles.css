@@ -423,6 +423,19 @@ body.chrome-hidden #view{padding:0}
 .ac-nudge{font-size:15px;line-height:1;padding:4px 8px;border:1px solid var(--line2);border-radius:6px;background:transparent;margin-right:8px}
 .ac-nudge:active{background:var(--volt-ghost);border-color:var(--volt)}
 .ac-nudge:disabled{opacity:.4}
+
+/* ---------- training soundtrack ---------- */
+.inp{width:100%;background:#0A0B0A;border:1px solid var(--line2);border-radius:6px;color:var(--ink);
+  font-size:15px;padding:11px 12px;font-family:inherit}
+.inp:focus{outline:none;border-color:var(--volt)}
+.mus-card{padding:4px 14px}
+.mus-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--ink)}
+.mus-row:last-child{border-bottom:none}
+.mus-info{flex:1;min-width:0}
+.mus-info b{font-size:14px}
+.mus-info small{display:block;color:var(--muted);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mus-play{width:30px;height:30px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;background:var(--volt-ghost);color:var(--volt);font-size:12px}
 .fld{display:block;margin-bottom:12px}
 .fld span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:5px}
 .fld input{width:100%;background:#0A0B0A;border:1px solid var(--line2);border-radius:6px;color:var(--ink);

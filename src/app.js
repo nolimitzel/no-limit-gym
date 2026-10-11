@@ -12,6 +12,7 @@ import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
 import { getMyCommitment, setCommitment, getSquadCommitments, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
+import { getMusic, setMusic, safeMusicUrl } from "./data/music.js";
 
 let _booted = false;
 export function initTracker() {
@@ -743,6 +744,20 @@ export function initTracker() {
       ${privRow("music", "Music")}
       <p class="sq-ihint" style="margin-top:8px">You control what's shared. Turn Workouts off and your sessions stop posting to the feed.</p></div>`;
 
+    // training soundtrack
+    const mus = getMusic();
+    const musOn = pv.music;
+    html += `<div class="subhead">Your training soundtrack</div><div class="card">
+      ${musOn ? `
+      <div class="field"><label>Playlist link (Spotify, Apple Music, YouTube…)</label>
+        <input id="mus-url" class="inp" type="url" inputmode="url" autocapitalize="none" placeholder="https://…" value="${esc(mus.url || "")}"></div>
+      <div class="field" style="margin-top:10px"><label>Vibe <small style="color:var(--muted)">(optional)</small></label>
+        <input id="mus-label" class="inp" placeholder="e.g. Heavy rap · gym phonk" maxlength="40" value="${esc(mus.label || "")}"></div>
+      <button class="btn sm" data-act="savemusic" style="margin-top:12px">Save soundtrack 🎧</button>
+      <p class="sq-ihint" style="margin-top:8px">Your squad sees this on the Squad tab. Clear the link to stop sharing.</p>`
+      : `<p class="sq-ihint" style="margin:0">Music sharing is off. Turn on <b>Music</b> above to share a playlist with your squad.</p>`}
+      </div>`;
+
     // settings / data
     html += `<div class="subhead">Set-up &amp; data</div>`;
     const curPos = posForDate(todayStr());
@@ -877,6 +892,20 @@ export function initTracker() {
 
     return `${mine}<div class="card">${rows || '<div class="empty">No members yet.</div>'}</div>`;
   }
+  function renderSquadMusic(members) {
+    const items = members.map(m => {
+      const p = m.profiles || {};
+      const url = safeMusicUrl(p.music_url);
+      if (!url) return "";
+      const nm = p.name || p.username || "Member";
+      return `<a class="mus-row" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+        <span class="sq-av sm">${esc((nm[0] || "?").toUpperCase())}</span>
+        <span class="mus-info"><b>${esc(nm)}</b><small>${esc(p.music_label || "Training playlist")}</small></span>
+        <span class="mus-play">▶</span></a>`;
+    }).filter(Boolean).join("");
+    if (!items) return "";
+    return `<div class="subhead">What we train to 🎧</div><div class="card mus-card">${items}</div>`;
+  }
   function openChallengeModal() {
     const ov = document.createElement("div");
     ov.className = "modal";
@@ -950,6 +979,7 @@ export function initTracker() {
       <div class="subhead lb-head">Challenges
         <button class="lb-r" data-act="newchallenge">+ New</button></div>
       ${renderChallenges(challenges, allWp, isOwner, u.id)}
+      ${renderSquadMusic(members)}
       <div class="subhead">Squad activity</div>
       <div class="feed">${renderFeedPosts(feed, u.id)}</div>
       <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:14px">↩ Leave squad</button>`;
@@ -1206,8 +1236,19 @@ export function initTracker() {
     }
     else if (act === "togglepriv") {
       const key = el.dataset.key;
-      setPrivacy(cachedUser().id, { [key]: !getPrivacy()[key] });
+      const next = !getPrivacy()[key];
+      setPrivacy(cachedUser().id, { [key]: next });
+      if (key === "music" && !next) setMusic(cachedUser().id, "", "").catch(() => {}); // unshare on opt-out
       renderPlan();
+    }
+    else if (act === "savemusic") {
+      const url = (document.getElementById("mus-url")?.value || "").trim();
+      const label = (document.getElementById("mus-label")?.value || "").trim();
+      if (url && !safeMusicUrl(url)) { toast("Enter a valid http(s) link"); return; }
+      el.disabled = true;
+      setMusic(cachedUser().id, url, label)
+        .then(() => { toast(url ? "Soundtrack saved 🎧" : "Soundtrack cleared"); renderPlan(); })
+        .catch(e => { el.disabled = false; toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"); });
     }
   });
 

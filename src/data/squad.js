@@ -16,10 +16,16 @@ export async function getMySquad(userId) {
 }
 
 export async function getMembers(squadId) {
-  const { data, error } = await supabase.from("squad_members")
-    .select("user_id,role,joined_at,profiles(username,name,avatar_url)")
-    .eq("squad_id", squadId).order("joined_at", { ascending: true });
-  if (error) throw error;
+  // music_* columns exist only after migrate_8; fall back if they're missing.
+  const withMusic = "user_id,role,joined_at,profiles(username,name,avatar_url,music_url,music_label)";
+  const base = "user_id,role,joined_at,profiles(username,name,avatar_url)";
+  let { data, error } = await supabase.from("squad_members")
+    .select(withMusic).eq("squad_id", squadId).order("joined_at", { ascending: true });
+  if (error) {
+    ({ data, error } = await supabase.from("squad_members")
+      .select(base).eq("squad_id", squadId).order("joined_at", { ascending: true }));
+    if (error) throw error;
+  }
   return data || [];
 }
 

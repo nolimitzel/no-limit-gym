@@ -18,6 +18,7 @@ import { setActiveTargets } from "./data/targets.js";
 import { getMySquad } from "./data/squad.js";
 import { setCurrentSquad } from "./data/social.js";
 import { loadPrivacy } from "./data/privacy.js";
+import { loadMusic } from "./data/music.js";
 
 const LEGACY_KEY = "gymtracker.v1";                       // pre-2.0 single-user blob
 
@@ -26,6 +27,7 @@ async function bootApp(user) {
   setActiveProgramme(prog);                                // this user's programme (local-first)
   setActiveTargets(tg);                                    // this user's nutrition targets
   loadPrivacy(user.id);                                    // what this user shares with their squad
+  loadMusic(user.id);                                      // this user's training soundtrack
   getMySquad(user.id).then(sq => setCurrentSquad(sq?.id)).catch(() => {}); // cache squad for activity posts
   try {
     // 1) one-time legacy migration — the first account on this device claims it
