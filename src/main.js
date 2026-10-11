@@ -20,6 +20,7 @@ import { setCurrentSquad } from "./data/social.js";
 import { loadPrivacy } from "./data/privacy.js";
 import { loadMusic } from "./data/music.js";
 import { handleSpotifyRedirect } from "./data/spotify.js";
+import { setupPWA } from "./pwa.js";
 
 const LEGACY_KEY = "gymtracker.v1";                       // pre-2.0 single-user blob
 
@@ -58,6 +59,7 @@ async function routeAuthed(session) {
 }
 
 async function start() {
+  setupPWA();                                              // update prompt + offline + install affordances
   await handleSpotifyRedirect();                           // returning from Spotify? exchange + clean URL
   if (!supabase) { document.body.classList.remove("chrome-hidden"); initTracker(); return; }
   const session = await getSession();

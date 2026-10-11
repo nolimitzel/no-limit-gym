@@ -9,12 +9,12 @@ export default defineConfig({
   preview: { port: 4173 },
   plugins: [
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: ["icons/*.png"],
       manifest: {
-        name: "No Limit — Gym Tracker",
+        name: "NO LIMIT Gym",
         short_name: "No Limit",
-        description: "Your personal 5-day muscle-building tracker.",
+        description: "Train. Track. Compete with your squad. No limits.",
         start_url: "/",
         scope: "/",
         display: "standalone",
