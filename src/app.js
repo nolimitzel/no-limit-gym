@@ -13,6 +13,7 @@ import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
 import { getMyCommitment, setCommitment, getSquadCommitments, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
 import { getMusic, setMusic, safeMusicUrl } from "./data/music.js";
+import { spotifyConfigured, connectSpotify, isSpotifyConnected, disconnectSpotify, getSpotifyPlaylists } from "./data/spotify.js";
 
 let _booted = false;
 export function initTracker() {
@@ -747,8 +748,15 @@ export function initTracker() {
     // training soundtrack
     const mus = getMusic();
     const musOn = pv.music;
+    const spotBlock = spotifyConfigured() ? (isSpotifyConnected()
+      ? `<div class="spot-row"><span class="spot-badge">🟢 Spotify connected</span>
+          <span class="spot-acts"><button class="lb-r" data-act="spotpick">Pick a playlist</button>
+            <button class="lb-r" data-act="spotoff">Disconnect</button></span></div>`
+      : `<button class="btn sm spot-connect" data-act="spoton">🎵 Connect Spotify</button>
+         <p class="sq-ihint" style="margin:8px 0 0">Authorize once, then pick a playlist to share — no typing a link.</p>`)
+      : "";
     html += `<div class="subhead">Your training soundtrack</div><div class="card">
-      ${musOn ? `
+      ${musOn ? `${spotBlock ? spotBlock + `<div class="or-line"><span>or paste a link</span></div>` : ""}
       <div class="field"><label>Playlist link (Spotify, Apple Music, YouTube…)</label>
         <input id="mus-url" class="inp" type="url" inputmode="url" autocapitalize="none" placeholder="https://…" value="${esc(mus.url || "")}"></div>
       <div class="field" style="margin-top:10px"><label>Vibe <small style="color:var(--muted)">(optional)</small></label>
@@ -905,6 +913,29 @@ export function initTracker() {
     }).filter(Boolean).join("");
     if (!items) return "";
     return `<div class="subhead">What we train to 🎧</div><div class="card mus-card">${items}</div>`;
+  }
+  async function openSpotifyPicker() {
+    const ov = document.createElement("div"); ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box"><div class="modal-head"><b>Pick a playlist</b><span class="mx" data-act="closemodal">✕</span></div>
+      <div class="spot-list"><div class="empty" style="padding:22px">Loading your playlists…</div></div></div>`;
+    document.body.appendChild(ov);
+    const list = ov.querySelector(".spot-list");
+    try {
+      const pls = await getSpotifyPlaylists();
+      if (!pls.length) { list.innerHTML = `<div class="empty" style="padding:22px">No playlists found on your account.</div>`; return; }
+      list.innerHTML = pls.map(p => `<button class="spot-item" data-url="${esc(p.url || "")}" data-name="${esc(p.name)}">
+        ${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : `<span class="spot-ph">♪</span>`}
+        <span class="spot-meta"><b>${esc(p.name)}</b><small>${p.tracks != null ? p.tracks + " tracks" : "playlist"}</small></span></button>`).join("");
+      list.querySelectorAll(".spot-item").forEach(it => it.addEventListener("click", () => {
+        const url = it.dataset.url, name = it.dataset.name;
+        if (!url) { toast("That playlist has no shareable link"); return; }
+        setMusic(cachedUser().id, url, name)
+          .then(() => { ov.remove(); toast("Soundtrack set 🎧"); renderPlan(); })
+          .catch(e => toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"));
+      }));
+    } catch (e) {
+      list.innerHTML = `<div class="empty" style="padding:22px">${/not-connected|expired/.test(e?.message || "") ? "Spotify session expired — reconnect it." : "Couldn't load playlists."}</div>`;
+    }
   }
   function openChallengeModal() {
     const ov = document.createElement("div");
@@ -1241,6 +1272,9 @@ export function initTracker() {
       if (key === "music" && !next) setMusic(cachedUser().id, "", "").catch(() => {}); // unshare on opt-out
       renderPlan();
     }
+    else if (act === "spoton") { connectSpotify().catch(() => toast("Spotify isn't set up yet")); }
+    else if (act === "spotoff") { disconnectSpotify(); toast("Spotify disconnected"); renderPlan(); }
+    else if (act === "spotpick") { openSpotifyPicker(); }
     else if (act === "savemusic") {
       const url = (document.getElementById("mus-url")?.value || "").trim();
       const label = (document.getElementById("mus-label")?.value || "").trim();
