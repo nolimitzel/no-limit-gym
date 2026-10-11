@@ -1081,7 +1081,12 @@ export function initTracker() {
           .catch(e => toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"));
       }));
     } catch (e) {
-      list.innerHTML = `<div class="empty" style="padding:22px">${/not-connected|expired/.test(e?.message || "") ? "Spotify session expired — reconnect it." : "Couldn't load playlists."}</div>`;
+      const m = e?.message || "";
+      let msg;
+      if (/not-connected|expired|api-401/.test(m)) msg = "Spotify session expired — disconnect and reconnect.";
+      else if (/api-403/.test(m)) msg = "Spotify blocked this (403). Your app is in Development mode — add your Spotify account under the app's User Management in the Spotify dashboard, then reconnect.";
+      else msg = "Couldn't load playlists" + (m ? " (" + esc(m) + ")" : "") + ".";
+      list.innerHTML = `<div class="empty" style="padding:22px;line-height:1.5">${msg}</div>`;
     }
   }
   function openChallengeModal() {
