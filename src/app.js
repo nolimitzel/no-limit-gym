@@ -11,7 +11,7 @@ import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./da
 import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
-import { getMyCommitment, setCommitment, getSquadCommitments, weekStartISO } from "./data/commitments.js";
+import { getMyCommitment, setCommitment, getSquadCommitments, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
 
 let _booted = false;
 export function initTracker() {
@@ -804,7 +804,32 @@ export function initTracker() {
       </div>`;
     }).join("");
   }
-  function renderAccountability(members, squadCommits, allWp, myCommit, myId) {
+  // consecutive pledged-and-hit weeks per user (current week counts only once hit;
+  // an unhit current week doesn't break a prior streak — it's still in progress).
+  function computeStreaks(commitsAll, allWp) {
+    const wk = {};   // uid -> { weekStart -> workout count }
+    allWp.forEach(p => {
+      const ws = weekStartISO(new Date(p.created_at));
+      (wk[p.user_id] ||= {})[ws] = ((wk[p.user_id] || {})[ws] || 0) + 1;
+    });
+    const cm = {};   // uid -> { weekStart -> target }
+    commitsAll.forEach(c => { (cm[c.user_id] ||= {})[c.week_start] = c.target; });
+    const thisWeek = weekStartISO();
+    const streaks = {};
+    Object.keys(cm).forEach(uid => {
+      const hit = ws => cm[uid][ws] != null && (wk[uid]?.[ws] || 0) >= cm[uid][ws];
+      let streak = 0, cur = thisWeek;
+      if (hit(cur)) streak++;            // count current week only if already hit
+      cur = prevWeekISO(cur);            // then walk back through completed weeks
+      while (cm[uid][cur] != null) {
+        if (hit(cur)) { streak++; cur = prevWeekISO(cur); }
+        else break;
+      }
+      streaks[uid] = streak;
+    });
+    return streaks;
+  }
+  function renderAccountability(members, squadCommits, allWp, myCommit, myId, streaks) {
     const ws = new Date(weekStartISO() + "T00:00:00").getTime();
     const doneBy = {};
     allWp.filter(p => new Date(p.created_at).getTime() >= ws)
@@ -812,20 +837,22 @@ export function initTracker() {
     const commitBy = {};
     squadCommits.forEach(c => { commitBy[c.user_id] = c.target; });
 
+    const streakTag = n => n > 0 ? `<span class="ac-streak">🔥 ${n}</span>` : "";
     const myTarget = myCommit?.target || 0;
     const myDone = doneBy[myId] || 0;
+    const myStreak = (streaks && streaks[myId]) || 0;
     let mine;
     if (!myTarget) {
       mine = `<div class="card ac-set">
         <div class="ac-setx"><b>Set this week's commitment</b>
-          <small>Pledge how many sessions you'll train — your squad holds you to it.</small></div>
+          <small>Pledge how many sessions you'll train — your squad holds you to it.${myStreak ? ` You're on a 🔥 ${myStreak}-week streak — keep it alive.` : ""}</small></div>
         <button class="btn sm" data-act="setcommit" data-cur="">Pledge</button></div>`;
     } else {
       const pct = Math.min(100, Math.round(myDone / myTarget * 100));
       const hit = myDone >= myTarget;
       mine = `<div class="card">
         <div class="ac-mine-h"><b>Your pledge · ${myDone} / ${myTarget} this week${hit ? " · ✅" : ""}</b>
-          <button class="lb-r" data-act="setcommit" data-cur="${myTarget}">Edit</button></div>
+          <span class="ac-mine-r">${streakTag(myStreak)}<button class="lb-r" data-act="setcommit" data-cur="${myTarget}">Edit</button></span></div>
         <div class="ch-bar"><i class="${hit ? "done" : ""}" style="width:${pct}%"></i></div></div>`;
     }
 
@@ -835,14 +862,17 @@ export function initTracker() {
       const nm = p.name || p.username || "Member";
       const tgt = commitBy[uid] || 0;
       const done = doneBy[uid] || 0;
-      let status, cls;
+      const isMe = uid === myId;
+      let status, cls, behind = false;
       if (!tgt) { status = "no pledge"; cls = "none"; }
       else if (done >= tgt) { status = `✅ ${done}/${tgt}`; cls = "hit"; }
-      else { status = `${done}/${tgt}`; cls = (done >= tgt * 0.5 ? "mid" : "behind"); }
+      else { status = `${done}/${tgt}`; cls = (done >= tgt * 0.5 ? "mid" : "behind"); behind = true; }
+      const nudge = (behind && !isMe)
+        ? `<button class="ac-nudge" data-act="nudge" data-name="${esc(nm)}">👊</button>` : "";
       return `<div class="ac-row">
         <span class="sq-av sm">${esc((nm[0] || "?").toUpperCase())}</span>
-        <span class="ac-nm">${esc(nm)}${uid === myId ? " <small>(you)</small>" : ""}</span>
-        <span class="ac-st ${cls}">${status}</span></div>`;
+        <span class="ac-nm">${esc(nm)}${isMe ? " <small>(you)</small>" : ""}${streakTag(streaks && streaks[uid])}</span>
+        ${nudge}<span class="ac-st ${cls}">${status}</span></div>`;
     }).join("");
 
     return `${mine}<div class="card">${rows || '<div class="empty">No members yet.</div>'}</div>`;
@@ -881,9 +911,11 @@ export function initTracker() {
     let allWp = [], ranked = [], challenges = [];
     try { allWp = await getWorkoutPosts(squad.id, null); } catch {}
     try { challenges = await getChallenges(squad.id); } catch {}
-    let myCommit = null, squadCommits = [];
+    let myCommit = null, squadCommits = [], commitsAll = [];
     try { myCommit = await getMyCommitment(u.id); } catch {}
     try { squadCommits = await getSquadCommitments(squad.id); } catch {}
+    try { commitsAll = await getSquadCommitmentsAll(squad.id); } catch {}
+    const streaks = computeStreaks(commitsAll, allWp);
     {
       const cut = LB_RANGE ? Date.now() - LB_RANGE * 86400000 : 0;
       const counts = {};
@@ -911,7 +943,7 @@ export function initTracker() {
       <div class="subhead">Members</div>
       <div class="card">${memberRows || '<div class="empty">No members yet.</div>'}</div>
       <div class="subhead">Accountability · this week</div>
-      ${renderAccountability(members, squadCommits, allWp, myCommit, u.id)}
+      ${renderAccountability(members, squadCommits, allWp, myCommit, u.id, streaks)}
       <div class="subhead lb-head">Leaderboard
         <span class="lb-range">${[[7, "7D"], [30, "30D"], [0, "All"]].map(([v, l]) => `<button class="lb-r ${(LB_RANGE || 0) === v ? "on" : ""}" data-act="lbrange" data-d="${v}">${l}</button>`).join("")}</span></div>
       <div class="card">${renderLeaderboard(ranked)}</div>
@@ -1164,6 +1196,13 @@ export function initTracker() {
       setCommitment(cachedUser().id, getCurrentSquad(), t)
         .then(() => { toast("Locked in 💪"); renderSquad(); })
         .catch(e => toast(/relation|exist|schema/i.test(e?.message || "") ? "Run migrate_7.sql first" : "Couldn't save"));
+    }
+    else if (act === "nudge") {
+      const name = el.dataset.name || "your squad-mate";
+      el.disabled = true;
+      postActivity(cachedUser().id, getCurrentSquad(), "nudge", { title: `nudged ${name} to show up 👊` })
+        .then(() => { toast("Nudge sent 👊"); renderSquad(); })
+        .catch(() => { el.disabled = false; toast("Couldn't send nudge"); });
     }
     else if (act === "togglepriv") {
       const key = el.dataset.key;

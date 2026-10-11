@@ -36,3 +36,19 @@ export async function getSquadCommitments(squadId, weekStart = weekStartISO()) {
   if (error) throw error;
   return data || [];
 }
+
+// every week's commitment for the squad — used to compute streaks client-side
+export async function getSquadCommitmentsAll(squadId) {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("commitments")
+    .select("user_id,target,week_start").eq("squad_id", squadId);
+  if (error) throw error;
+  return data || [];
+}
+
+// the Monday before the given week-start string (YYYY-MM-DD)
+export function prevWeekISO(ws) {
+  const d = new Date(ws + "T00:00:00");
+  d.setDate(d.getDate() - 7);
+  return weekStartISO(d);
+}
