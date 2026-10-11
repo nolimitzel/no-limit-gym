@@ -29,10 +29,17 @@ function chips(group, options, selected, multi) {
 function render(user, onDone, msg) {
   view().innerHTML = `
     <div class="ob">
-      <div class="auth-brand"><span class="dot">N</span><span class="wm">NO&nbsp;LIMIT</span></div>
-      <h1 class="auth-h">Set up your training</h1>
-      <p class="auth-sub">Takes 30 seconds. You can change it later.</p>
+      <div class="auth-brand"><img class="auth-logo" src="/brand/logo-mark.png" alt="NO LIMIT Gym"></div>
+      <h1 class="auth-h">Welcome in.</h1>
+      <p class="auth-sub">Let's set up your training — 30 seconds, change anything later.</p>
       ${msg ? `<div class="auth-note err">${esc(msg)}</div>` : ""}
+
+      <div class="ob-row">
+        <label class="auth-f"><span>Name</span>
+          <input id="ob-name" value="${esc(state.name || "")}" maxlength="40" placeholder="Your name"></label>
+        <label class="auth-f"><span>Username</span>
+          <input id="ob-user" value="${esc(state.username || "")}" maxlength="20" autocapitalize="none" placeholder="username"></label>
+      </div>
 
       <div class="ob-label">Your goal</div>
       ${chips("goal", GOALS, state.goal, false)}
@@ -55,10 +62,18 @@ function render(user, onDone, msg) {
   wire(user, onDone);
 }
 
+function stash() {
+  const g = id => document.getElementById(id);
+  if (g("ob-name")) state.name = g("ob-name").value;
+  if (g("ob-user")) state.username = g("ob-user").value;
+  if (g("ob-bw")) state.bw_current = parseFloat(g("ob-bw").value) || null;
+  if (g("ob-tg")) state.bw_target = parseFloat(g("ob-tg").value) || null;
+}
 function wire(user, onDone) {
   view().querySelectorAll(".ob-chips").forEach(grp => {
     const group = grp.dataset.group, multi = grp.dataset.multi === "1";
     grp.querySelectorAll(".ob-chip").forEach(c => c.addEventListener("click", () => {
+      stash();                       // keep typed fields across the re-render
       const v = c.dataset.v;
       if (multi) {
         const set = new Set(state[group]); set.has(v) ? set.delete(v) : set.add(v);
@@ -70,8 +85,9 @@ function wire(user, onDone) {
 
   document.getElementById("ob-go").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
-    state.bw_current = parseFloat(document.getElementById("ob-bw").value) || null;
-    state.bw_target = parseFloat(document.getElementById("ob-tg").value) || null;
+    stash();
+    state.username = (state.username || "").replace(/[^a-z0-9_]/gi, "");
+    if (!state.name || !state.name.trim()) return render(user, onDone, "Add your name.");
     if (!state.training_days.length) return render(user, onDone, "Pick at least one training day.");
     btn.disabled = true; btn.textContent = "Saving…";
     const { error } = await saveOnboarding(user.id, state);
