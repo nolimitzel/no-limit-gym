@@ -33,6 +33,24 @@ export async function getWorkoutPosts(squadId, sinceIso) {
   return data || [];
 }
 
+/* ---- challenges (squad-combined goals) ---- */
+export async function getChallenges(squadId) {
+  const { data, error } = await supabase.from("challenges")
+    .select("*").eq("squad_id", squadId).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+export async function createChallenge(squadId, userId, title, target, days) {
+  const ends = new Date(Date.now() + days * 86400000).toISOString();
+  const { error } = await supabase.from("challenges")
+    .insert({ squad_id: squadId, title, target, metric: "workouts", ends_on: ends, created_by: userId });
+  if (error) throw error;
+}
+export async function deleteChallenge(id) {
+  const { error } = await supabase.from("challenges").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function toggleReaction(postId, userId, emoji) {
   const { data } = await supabase.from("activity_reactions")
     .select("id").match({ post_id: postId, user_id: userId, emoji });

@@ -7,7 +7,8 @@ import { getActiveProgramme } from "./data/programme.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { openEditor } from "./programme/editor.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
-import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS } from "./data/social.js";
+import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
+  getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
 
 let _booted = false;
@@ -778,6 +779,40 @@ export function initTracker() {
       <span class="lb-name">${esc(r.name)}</span>
       <span class="lb-n">${r.n} workout${r.n === 1 ? "" : "s"}</span></div>`).join("");
   }
+  function renderChallenges(challenges, allWp, isOwner, myId) {
+    if (!challenges.length)
+      return `<div class="card"><div class="empty" style="padding:16px">No challenges yet — set a squad goal to chase together.</div></div>`;
+    return challenges.map(c => {
+      const start = new Date(c.starts_on || c.created_at).getTime();
+      const end = c.ends_on ? new Date(c.ends_on).getTime() : Infinity;
+      const done = allWp.filter(p => { const t = new Date(p.created_at).getTime(); return t >= start && t <= end; }).length;
+      const pct = c.target ? Math.min(100, Math.round(done / c.target * 100)) : 0;
+      const complete = done >= c.target;
+      const daysLeft = c.ends_on ? Math.max(0, Math.ceil((end - Date.now()) / 86400000)) : null;
+      const canDel = isOwner || c.created_by === myId;
+      return `<div class="card ch-card">
+        <div class="ch-h"><b>${esc(c.title)}</b>${canDel ? `<span class="ch-x" data-act="delchallenge" data-id="${c.id}">✕</span>` : ""}</div>
+        <div class="ch-meta">
+          <span>${done} / ${c.target} workouts${complete ? " · ✅ smashed it" : ""}</span>
+          <span>${daysLeft != null ? (daysLeft === 0 ? "ends today" : daysLeft + "d left") : "ongoing"}</span></div>
+        <div class="ch-bar"><i class="${complete ? "done" : ""}" style="width:${pct}%"></i></div>
+      </div>`;
+    }).join("");
+  }
+  function openChallengeModal() {
+    const ov = document.createElement("div");
+    ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box">
+      <div class="modal-head"><b>New challenge</b><span class="mx" data-act="closemodal">✕</span></div>
+      <label class="fld"><span>Title</span><input id="ch-title" placeholder="e.g. 20 workouts this month" maxlength="60"></label>
+      <div class="ch-row">
+        <label class="fld"><span>Target (combined workouts)</span><input id="ch-target" type="number" inputmode="numeric" value="20" min="1"></label>
+        <label class="fld"><span>Days</span><input id="ch-days" type="number" inputmode="numeric" value="30" min="1"></label>
+      </div>
+      <button class="btn" data-act="savechallenge" style="width:100%;margin-top:4px">Create challenge 🔥</button></div>`;
+    document.body.appendChild(ov);
+    setTimeout(() => document.getElementById("ch-title")?.focus(), 30);
+  }
   async function renderSquad() {
     const u = cachedUser();
     view().innerHTML = `<div class="section-label">Your people</div><h1 class="h-title">Squad</h1>
@@ -795,14 +830,17 @@ export function initTracker() {
     try { members = await getMembers(squad.id); } catch {}
     let feed = [];
     try { feed = await getFeed(squad.id); } catch {}
-    let ranked = [];
-    try {
-      const sinceIso = LB_RANGE ? new Date(Date.now() - LB_RANGE * 86400000).toISOString() : null;
-      const wp = await getWorkoutPosts(squad.id, sinceIso);
+    let allWp = [], ranked = [], challenges = [];
+    try { allWp = await getWorkoutPosts(squad.id, null); } catch {}
+    try { challenges = await getChallenges(squad.id); } catch {}
+    {
+      const cut = LB_RANGE ? Date.now() - LB_RANGE * 86400000 : 0;
       const counts = {};
-      wp.forEach(p => { (counts[p.user_id] ||= { name: p.profiles?.name || p.profiles?.username || "Member", n: 0 }).n++; });
+      allWp.filter(p => new Date(p.created_at).getTime() >= cut)
+        .forEach(p => { (counts[p.user_id] ||= { name: p.profiles?.name || p.profiles?.username || "Member", n: 0 }).n++; });
       ranked = Object.values(counts).sort((a, b) => b.n - a.n);
-    } catch {}
+    }
+    const isOwner = members.some(m => m.role === "owner" && (m.user_id === u.id || m.profiles?.id === u.id));
     const memberRows = members.map(m => {
       const p = m.profiles || {};
       const nm = p.name || p.username || "Member";
@@ -824,6 +862,9 @@ export function initTracker() {
       <div class="subhead lb-head">Leaderboard
         <span class="lb-range">${[[7, "7D"], [30, "30D"], [0, "All"]].map(([v, l]) => `<button class="lb-r ${(LB_RANGE || 0) === v ? "on" : ""}" data-act="lbrange" data-d="${v}">${l}</button>`).join("")}</span></div>
       <div class="card">${renderLeaderboard(ranked)}</div>
+      <div class="subhead lb-head">Challenges
+        <button class="lb-r" data-act="newchallenge">+ New</button></div>
+      ${renderChallenges(challenges, allWp, isOwner, u.id)}
       <div class="subhead">Squad activity</div>
       <div class="feed">${renderFeedPosts(feed, u.id)}</div>
       <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:14px">↩ Leave squad</button>`;
@@ -1036,6 +1077,24 @@ export function initTracker() {
       toggleReaction(el.dataset.pid, cachedUser().id, el.dataset.emoji).then(() => renderSquad()).catch(() => {});
     }
     else if (act === "lbrange") { LB_RANGE = parseInt(el.dataset.d, 10) || 0; renderSquad(); }
+    else if (act === "newchallenge") openChallengeModal();
+    else if (act === "closemodal") el.closest(".modal")?.remove();
+    else if (act === "savechallenge") {
+      const title = (document.getElementById("ch-title")?.value || "").trim();
+      const target = parseInt(document.getElementById("ch-target")?.value, 10) || 0;
+      const days = parseInt(document.getElementById("ch-days")?.value, 10) || 30;
+      if (!title) { toast("Give it a title"); return; }
+      if (!target) { toast("Set a target"); return; }
+      const sid = getCurrentSquad();
+      if (!sid) { toast("No squad found"); return; }
+      el.disabled = true;
+      createChallenge(sid, cachedUser().id, title, target, days)
+        .then(() => { el.closest(".modal")?.remove(); toast("Challenge created 🔥"); renderSquad(); })
+        .catch(e => { el.disabled = false; toast(/relation|exist|schema/i.test(e?.message || "") ? "Run migrate_6.sql in Supabase first" : "Couldn't create challenge"); });
+    }
+    else if (act === "delchallenge") {
+      if (confirm("Delete this challenge?")) deleteChallenge(el.dataset.id).then(() => renderSquad()).catch(() => toast("Couldn't delete"));
+    }
     else if (act === "togglepriv") {
       const key = el.dataset.key;
       setPrivacy(cachedUser().id, { [key]: !getPrivacy()[key] });
