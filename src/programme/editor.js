@@ -43,7 +43,7 @@ function render() {
     const also = work.cycle.map((x, k) => (k !== i && x.type === "train" && x.session === c.session ? DAYS[k] : null)).filter(Boolean);
     const rows = s.exercises.map((ex, j) => `
       <div class="ed-ex">
-        <span class="ed-ex-n">${esc(ex.name)}${ex.cardio ? " 🔥" : ""}</span>
+        <span class="ed-ex-n">${esc(ex.name)}${ex.cardio ? ' <span class="tag-yours">CARDIO</span>' : ""}</span>
         <span class="ed-ex-m">${esc(ex.sets)}×${esc(ex.reps)}</span>
         <span class="ed-ctl">
           <button data-act="ed-up" data-i="${i}" data-j="${j}">↑</button>
@@ -107,7 +107,7 @@ async function doSave(btn) {
   const u = cachedUser();
   const r = u ? await saveProgramme(u.id, work) : { synced: true };
   // be honest: an unsynced save is kept on this device and pushed on next launch (AUDIT C2/C3)
-  btn.textContent = r.synced ? "Saved ✓" : "Saved on device";
+  btn.textContent = r.synced ? "Saved" : "Saved on device";
   setTimeout(() => location.reload(), r.synced ? 300 : 1200);   // reboot so the whole app uses it
 }
 
@@ -169,7 +169,7 @@ function pickerList(q) {
     if (!items.length) return "";
     return `<div class="ed-pg">${g}</div>` + items.map((e) =>
       `<button class="ed-pi" data-k="${e.key}">
-        <span>${esc(e.name)}${e.custom ? ` <span class="tag-yours">YOURS</span>` : ""}${e.cardio ? " 🔥" : ""}</span>
+        <span>${esc(e.name)}${e.custom ? ` <span class="tag-yours">YOURS</span>` : ""}${e.cardio ? ' <span class="tag-yours">CARDIO</span>' : ""}</span>
         <small>${esc(e.equipment)} · ${esc(e.sets)}×${esc(e.reps)}</small></button>`).join("");
   }).join("");
 }

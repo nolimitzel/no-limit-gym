@@ -15,7 +15,7 @@ export function setupPWA() {
   // 1) a new version was deployed → offer to refresh
   const updateSW = registerSW({
     onNeedRefresh() {
-      const el = bottomBanner("pwa-update", `<span>🚀 New version available</span><button class="pwa-act" id="pwa-up">Update</button>`);
+      const el = bottomBanner("pwa-update", `<span>New version available</span><button class="pwa-act" id="pwa-up">Update</button>`);
       el.querySelector("#pwa-up").onclick = () => updateSW(true);   // activates new SW + reloads
     },
   });
@@ -24,7 +24,7 @@ export function setupPWA() {
   let off = document.getElementById("pwa-offline");
   if (!off) {
     off = document.createElement("div"); off.id = "pwa-offline"; off.className = "pwa-top";
-    off.textContent = "⚡ Offline — your logs save on-device and sync when you're back.";
+    off.textContent = "Offline — your logs save on-device and sync when you're back.";
     document.body.appendChild(off);
   }
   const syncOnline = () => off.classList.toggle("show", !navigator.onLine);
@@ -36,7 +36,7 @@ export function setupPWA() {
   let deferred = null;
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault(); deferred = e;
-    const el = bottomBanner("pwa-install", `<span>📲 Install NO LIMIT</span><button class="pwa-act" id="pwa-in">Install</button>`);
+    const el = bottomBanner("pwa-install", `<span>Install NO LIMIT</span><button class="pwa-act" id="pwa-in">Install</button>`);
     el.querySelector("#pwa-in").onclick = async () => {
       el.classList.remove("show"); deferred.prompt();
       try { await deferred.userChoice; } catch {}

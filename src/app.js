@@ -364,7 +364,7 @@ export function initTracker() {
     const existing = getLog(today, ACTIVE);
     let html = `<div class="section-label">Log workout · ${esc(shortDate(today))}</div>
       <h1 class="h-title">${esc(s.full)}</h1><p class="h-sub">${esc(s.sub)}${quick ? "" : " — tap to change day below"}.</p>
-      <button class="linkbtn" data-act="picker" style="padding:11px 15px;margin-bottom:16px">↔ Switch session</button>`;
+      <button class="linkbtn" data-act="picker" style="padding:11px 15px;margin-bottom:16px">Switch session</button>`;
 
     if (quick && !s.exercises.length) {
       html += `<div class="card"><div class="empty" style="padding:18px">No exercises yet. Add what you're training today — from your library or create a new one.</div></div>`;
@@ -406,7 +406,7 @@ export function initTracker() {
 
     html += `<div style="height:70px"></div>
       <div class="savebar">
-        <button class="btn" data-act="save" data-s="${ACTIVE}">Save workout ✓</button>
+        <button class="btn" data-act="save" data-s="${ACTIVE}">Save workout</button>
       </div>`;
     view().innerHTML = html;
   }
@@ -427,13 +427,13 @@ export function initTracker() {
     const meta = ex.id === "hiit" ? P.cardio.protocol : (ex.target || "Cardio");
     return `<div class="ex cardio" data-ex="${ex.id}">
       <div class="ex-h">
-        <div class="info"><b class="ex-link" data-act="exhist" data-ex="${ex.id}">🔥 ${esc(ex.name)}</b><div class="meta">${esc(meta)}</div></div>
+        <div class="info"><b class="ex-link" data-act="exhist" data-ex="${ex.id}">${esc(ex.name)}</b><div class="meta">${esc(meta)}</div></div>
         <div class="tgt">${esc(ex.reps)}<small>cardio</small></div>
       </div>
       <div class="sets">
         <div class="set-head"><span></span><span>Minutes</span><span>Rounds</span><span></span></div>
         <div class="rows"><div class="set-row">
-          <span class="sn">🔥</span>
+          <span class="sn">·</span>
           <input class="w" type="number" inputmode="numeric" placeholder="min" value="${pv ? pv.w : ""}">
           <input class="r" type="number" inputmode="numeric" placeholder="rds" value="${pv ? pv.r : ""}">
           <span class="del" style="visibility:hidden">✕</span></div></div>
@@ -454,7 +454,7 @@ export function initTracker() {
         .filter(e => !q || e.name.toLowerCase().includes(q) || g.toLowerCase().includes(q));
       if (!items.length) return "";
       return `<div class="ed-pg">${g}</div>` + items.map(e =>
-        `<button class="ed-pi" data-k="${e.key}"><span>${esc(e.name)}${e.custom ? ' <span class="tag-yours">YOURS</span>' : ""}${e.cardio ? " 🔥" : ""}</span>
+        `<button class="ed-pi" data-k="${e.key}"><span>${esc(e.name)}${e.custom ? ' <span class="tag-yours">YOURS</span>' : ""}${e.cardio ? ' <span class="tag-yours">CARDIO</span>' : ""}</span>
           <small>${esc(e.equipment)} · ${esc(e.sets)}×${esc(e.reps)}</small></button>`).join("");
     }).join("");
     const ov = document.createElement("div"); ov.className = "ed-picker";
@@ -497,7 +497,7 @@ export function initTracker() {
     let html = `<div class="section-label">Choose session</div>
       <h1 class="h-title">Train</h1><p class="h-sub">Train your plan, or start a quick session and pick as you go.</p>
       <button class="pick quickpick" data-act="quickstart">
-        <span class="num">⚡</span>
+        <span class="num"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
         <span class="txt"><b>Quick session</b><span>No plan? Train anything — add exercises on the fly</span></span>
         <span class="arw">›</span></button>
       <div class="subhead">Your sessions</div>`;
@@ -540,7 +540,7 @@ export function initTracker() {
     }
     go("progress");
     const ok = await pushRecord("log", rec);
-    toast(ok ? "Workout saved 💪" : "Saved on this device — it'll sync when you're back online");
+    toast(ok ? "Workout saved" : "Saved on this device — it'll sync when you're back online");
   }
 
   /* ============================ PROGRESS ============================ */
@@ -553,7 +553,7 @@ export function initTracker() {
 
     let html = `<div class="section-label">Your numbers</div><h1 class="h-title">Progress</h1>
       <p class="h-sub">Beat the logbook. That's how you grow.</p>
-      <button class="btn" data-act="weekly" style="margin:0 0 16px">📋 Weekly review — copy to share</button>
+      <button class="btn" data-act="weekly" style="margin:0 0 16px">Weekly review — copy to share</button>
       <div class="grid2">
         <div class="stat"><div class="n">${total}</div><div class="l">Workouts logged</div></div>
         <div class="stat"><div class="n">${wk}</div><div class="l">This week</div></div>
@@ -599,7 +599,7 @@ export function initTracker() {
       html += `<div class="empty">Your heaviest set on each lift will appear here.</div>`;
     }
     html += `</div>`;
-    html += `<button class="linkbtn" data-act="history" style="margin-top:14px">📅 View full workout history
+    html += `<button class="linkbtn" data-act="history" style="margin-top:14px">View full workout history
       <small>Every session you've logged, by date.</small></button>`;
     view().innerHTML = html;
   }
@@ -827,7 +827,7 @@ export function initTracker() {
     if (left === 0 && !REST.done) { REST.done = true; restDone(); }
     el.classList.toggle("done", REST.done);
     el.querySelector(".rb-fill").style.width = (100 - Math.min(100, (left / REST.total) * 100)) + "%";
-    el.querySelector(".rb-l").textContent = REST.done ? "Go — next set 💪" : "Rest";
+    el.querySelector(".rb-l").textContent = REST.done ? "Go — next set" : "Rest";
     el.querySelector(".rb-t").textContent = REST.done ? "" : fmtClock(left);
     el.querySelector(".rb-skip").textContent = REST.done ? "Done" : "Skip";
   }
@@ -926,7 +926,7 @@ export function initTracker() {
         ${bar("Carbs", m.carbs, t.carbs, " g")}
         ${bar("Fats", m.fats, t.fats, " g")}
       </div>
-      <button class="linkbtn" data-act="edittargets" style="margin-top:14px">✎ Edit my targets
+      <button class="linkbtn" data-act="edittargets" style="margin-top:14px">Edit my targets
         <small>${t.kcal} kcal · ${t.protein}g P · ${t.carbs}g C · ${t.fats}g F</small></button>
     </div>`;
 
@@ -962,7 +962,7 @@ export function initTracker() {
     html += `</div>`;
 
     html += `<div class="note">Aim for a small daily surplus (~+250 kcal) with protein at the top of the range. Slow gain = lean gain.</div>`;
-    html += `<button class="linkbtn" data-act="gofuel" style="margin-top:12px">🍽 What should I eat today?
+    html += `<button class="linkbtn" data-act="gofuel" style="margin-top:12px">What should I eat today?
       <small>Your daily meal template, shopping list &amp; macro reference.</small></button>`;
     view().innerHTML = html;
   }
@@ -1004,7 +1004,7 @@ export function initTracker() {
     const nums = NUMS;
     let html = `<div class="section-label">Reference</div><h1 class="h-title">The Plan</h1>
       <p class="h-sub">Your full programme, always in your pocket.</p>
-      <button class="btn" data-act="editprog" style="margin:0 0 18px">✎ Edit my programme</button>`;
+      <button class="btn" data-act="editprog" style="margin:0 0 18px">Edit my programme</button>`;
 
     html += `<div class="subhead">Warm-up · every session</div><div class="card"><ul class="clean">` +
       P.warmup.map(w => `<li>${esc(w)}</li>`).join("") + `</ul></div>`;
@@ -1050,10 +1050,10 @@ export function initTracker() {
     const mus = getMusic();
     const musOn = pv.music;
     const spotBlock = spotifyConfigured() ? (isSpotifyConnected()
-      ? `<div class="spot-row"><span class="spot-badge">🟢 Spotify connected</span>
+      ? `<div class="spot-row"><span class="spot-badge">Spotify connected</span>
           <span class="spot-acts"><button class="lb-r" data-act="spotpick">Pick a playlist</button>
             <button class="lb-r" data-act="spotoff">Disconnect</button></span></div>`
-      : `<button class="btn sm spot-connect" data-act="spoton">🎵 Connect Spotify</button>
+      : `<button class="btn sm spot-connect" data-act="spoton">Connect Spotify</button>
          <p class="sq-ihint" style="margin:8px 0 0">Authorize once, then pick a playlist to share — no typing a link.</p>`)
       : "";
     html += `<div class="subhead">Your training soundtrack</div><div class="card">
@@ -1062,30 +1062,30 @@ export function initTracker() {
         <input id="mus-url" class="inp" type="url" inputmode="url" autocapitalize="none" placeholder="https://…" value="${esc(mus.url || "")}"></div>
       <div class="field" style="margin-top:10px"><label>Vibe <small style="color:var(--muted)">(optional)</small></label>
         <input id="mus-label" class="inp" placeholder="e.g. Heavy rap · gym phonk" maxlength="40" value="${esc(mus.label || "")}"></div>
-      <button class="btn sm" data-act="savemusic" style="margin-top:12px">Save soundtrack 🎧</button>
+      <button class="btn sm" data-act="savemusic" style="margin-top:12px">Save soundtrack</button>
       <p class="sq-ihint" style="margin-top:8px">Your squad sees this on the Squad tab. Clear the link to stop sharing.</p>`
       : `<p class="sq-ihint" style="margin:0">Music sharing is off. Turn on <b>Music</b> above to share a playlist with your squad.</p>`}
       </div>`;
 
     // settings / data
     html += `<div class="subhead">Set-up &amp; data</div>`;
-    html += `<button class="linkbtn" data-act="weekedit">📅 Edit your training week
+    html += `<button class="linkbtn" data-act="weekedit">Edit your training week
         <small>Set which sector you train each day of the week.</small></button>
-      <button class="linkbtn" data-act="loadsplit" style="border-color:var(--volt-dim,#4a5a00)">⚡ Load the muscle-group split
+      <button class="linkbtn" data-act="loadsplit" style="border-color:var(--volt-dim,#4a5a00)">Load the muscle-group split
         <small>Replace your programme with the 8 sector sessions (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged history is kept.</small></button>
-      <button class="linkbtn" data-act="ics">📅 Add gym-day reminders to Calendar
+      <button class="linkbtn" data-act="ics">Add gym-day reminders to Calendar
         <small>Weekly alerts for each training day (.ics file for iPhone Calendar).</small></button>
       <button class="linkbtn" data-act="export">⬇︎ Back up my data
         <small>Download all your logs as a file you can keep safe.</small></button>
-      <button class="linkbtn" data-act="importbtn">⬆︎ Restore from backup
+      <button class="linkbtn" data-act="importbtn">Restore from backup
         <small>Load a previously saved backup file.</small></button>
       <input id="importfile" type="file" accept="application/json" style="display:none">
-      <button class="linkbtn" data-act="reset" style="border-color:#5a3030">🗑 Reset all data
+      <button class="linkbtn" data-act="reset" style="border-color:#5a3030">Reset all data
         <small>Erase every log and start fresh. Cannot be undone.</small></button>
       <div class="subhead">Account</div>
       <div class="card"><div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Signed in as</div>
         <div style="font-family:var(--cond);font-size:16px;margin-top:3px">${esc(cachedUser()?.email || "—")}</div></div>
-      <button class="linkbtn" data-act="logout" style="border-color:#5a3030">↩ Log out</button>
+      <button class="linkbtn" data-act="logout" style="border-color:#5a3030">Log out</button>
       <div style="text-align:center;color:var(--dim);font-size:11px;margin-top:18px">
         No Limit — every muscle, every head, no excuses.</div>`;
 
@@ -1129,7 +1129,7 @@ export function initTracker() {
     let html = `<div class="section-label">Your profile</div>
       <div class="prof-head">
         <button class="prof-av-btn" data-act="avatarpick" aria-label="Change photo">
-          ${avatarMarkup(name, p.avatar_url, "prof-av")}<span class="av-cam">📷</span></button>
+          ${avatarMarkup(name, p.avatar_url, "prof-av")}<span class="av-cam"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span></button>
         <input type="file" id="avatar-file" accept="image/*" style="display:none">
         <div class="prof-id"><h1 class="prof-name">${esc(name)}</h1>
           ${uname ? `<div class="prof-handle">${esc(uname)}</div>` : ""}
@@ -1139,7 +1139,7 @@ export function initTracker() {
       <div class="prof-stats">
         ${stat(total, "Workouts")}
         ${stat(prCount, "PRs")}
-        ${stat(streak ? streak + " 🔥" : "0", "Week streak")}
+        ${stat(String(streak || 0), "Week streak")}
         ${stat(bw != null ? bw + "<small>kg</small>" : "—", "Bodyweight")}
       </div>`;
 
@@ -1151,14 +1151,14 @@ export function initTracker() {
     }
 
     html += `<div class="subhead">Yours</div>
-      <button class="linkbtn" data-act="gosquad">👥 Your squad<small>Leaderboard, challenges, accountability</small></button>
+      <button class="linkbtn" data-act="gosquad">Your squad<small>Leaderboard, challenges, accountability</small></button>
       ${mus.url
-        ? `<a class="linkbtn" href="${esc(safeMusicUrl(mus.url) || "#")}" target="_blank" rel="noopener noreferrer">🎧 ${esc(mus.label || "Your soundtrack")}<small>Open your training playlist</small></a>`
-        : `<button class="linkbtn" data-act="goplan">🎧 Set your soundtrack<small>Share a playlist with your squad</small></button>`}
+        ? `<a class="linkbtn" href="${esc(safeMusicUrl(mus.url) || "#")}" target="_blank" rel="noopener noreferrer">${esc(mus.label || "Your soundtrack")}<small>Open your training playlist</small></a>`
+        : `<button class="linkbtn" data-act="goplan">Set your soundtrack<small>Share a playlist with your squad</small></button>`}
       <div class="subhead">Account</div>
       <div class="card"><div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Signed in as</div>
         <div style="font-family:var(--cond);font-size:16px;margin-top:3px">${esc(u?.email || "—")}</div></div>
-      <button class="linkbtn" data-act="logout" style="border-color:#5a3030;margin-top:12px">↩ Log out</button>`;
+      <button class="linkbtn" data-act="logout" style="border-color:#5a3030;margin-top:12px">Log out</button>`;
 
     view().innerHTML = html;
   }
@@ -1194,7 +1194,7 @@ export function initTracker() {
   let LB_RANGE = 7;  // leaderboard window in days (0 = all time)
   function renderLeaderboard(ranked) {
     if (!ranked.length) return `<div class="empty" style="padding:14px">No workouts logged in this window yet.</div>`;
-    const medal = i => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "" + (i + 1));
+    const medal = i => String(i + 1);
     return ranked.map((r, i) => `<div class="lb-row">
       <span class="lb-rank">${medal(i)}</span>
       <span class="lb-name">${esc(r.name)}</span>
@@ -1214,7 +1214,7 @@ export function initTracker() {
       return `<div class="card ch-card">
         <div class="ch-h"><b>${esc(c.title)}</b>${canDel ? `<span class="ch-x" data-act="delchallenge" data-id="${c.id}">✕</span>` : ""}</div>
         <div class="ch-meta">
-          <span>${done} / ${c.target} workouts${complete ? " · ✅ smashed it" : ""}</span>
+          <span>${done} / ${c.target} workouts${complete ? " · smashed it" : ""}</span>
           <span>${daysLeft != null ? (daysLeft === 0 ? "ends today" : daysLeft + "d left") : "ongoing"}</span></div>
         <div class="ch-bar"><i class="${complete ? "done" : ""}" style="width:${pct}%"></i></div>
       </div>`;
@@ -1253,7 +1253,7 @@ export function initTracker() {
     const commitBy = {};
     squadCommits.forEach(c => { commitBy[c.user_id] = c.target; });
 
-    const streakTag = n => n > 0 ? `<span class="ac-streak">🔥 ${n}</span>` : "";
+    const streakTag = n => n > 0 ? `<span class="ac-streak">${n}-wk streak</span>` : "";
     const myTarget = myCommit?.target || 0;
     const myDone = doneBy[myId] || 0;
     const myStreak = (streaks && streaks[myId]) || 0;
@@ -1261,13 +1261,13 @@ export function initTracker() {
     if (!myTarget) {
       mine = `<div class="card ac-set">
         <div class="ac-setx"><b>Set this week's commitment</b>
-          <small>Pledge how many sessions you'll train — your squad holds you to it.${myStreak ? ` You're on a 🔥 ${myStreak}-week streak — keep it alive.` : ""}</small></div>
+          <small>Pledge how many sessions you'll train — your squad holds you to it.${myStreak ? ` You're on a ${myStreak}-week streak — keep it alive.` : ""}</small></div>
         <button class="btn sm" data-act="setcommit" data-cur="">Pledge</button></div>`;
     } else {
       const pct = Math.min(100, Math.round(myDone / myTarget * 100));
       const hit = myDone >= myTarget;
       mine = `<div class="card">
-        <div class="ac-mine-h"><b>Your pledge · ${myDone} / ${myTarget} this week${hit ? " · ✅" : ""}</b>
+        <div class="ac-mine-h"><b>Your pledge · ${myDone} / ${myTarget} this week${hit ? " · hit" : ""}</b>
           <span class="ac-mine-r">${streakTag(myStreak)}<button class="lb-r" data-act="setcommit" data-cur="${myTarget}">Edit</button></span></div>
         <div class="ch-bar"><i class="${hit ? "done" : ""}" style="width:${pct}%"></i></div></div>`;
     }
@@ -1281,10 +1281,10 @@ export function initTracker() {
       const isMe = uid === myId;
       let status, cls, behind = false;
       if (!tgt) { status = "no pledge"; cls = "none"; }
-      else if (done >= tgt) { status = `✅ ${done}/${tgt}`; cls = "hit"; }
+      else if (done >= tgt) { status = `${done}/${tgt} hit`; cls = "hit"; }
       else { status = `${done}/${tgt}`; cls = (done >= tgt * 0.5 ? "mid" : "behind"); behind = true; }
       const nudge = (behind && !isMe)
-        ? `<button class="ac-nudge" data-act="nudge" data-name="${esc(nm)}">👊</button>` : "";
+        ? `<button class="ac-nudge" data-act="nudge" data-name="${esc(nm)}">Nudge</button>` : "";
       return `<div class="ac-row">
         ${avatarMarkup(nm, p.avatar_url, "sq-av sm")}
         <span class="ac-nm">${esc(nm)}${isMe ? " <small>(you)</small>" : ""}${streakTag(streaks && streaks[uid])}</span>
@@ -1305,7 +1305,7 @@ export function initTracker() {
         <span class="mus-play">▶</span></a>`;
     }).filter(Boolean).join("");
     if (!items) return "";
-    return `<div class="subhead">What we train to 🎧</div><div class="card mus-card">${items}</div>`;
+    return `<div class="subhead">What we train to</div><div class="card mus-card">${items}</div>`;
   }
   async function openSpotifyPicker() {
     const ov = document.createElement("div"); ov.className = "modal";
@@ -1323,7 +1323,7 @@ export function initTracker() {
         const url = it.dataset.url, name = it.dataset.name;
         if (!url) { toast("That playlist has no shareable link"); return; }
         setMusic(cachedUser().id, url, name)
-          .then(() => { ov.remove(); toast("Soundtrack set 🎧"); if (TAB === "plan") renderPlan(); })
+          .then(() => { ov.remove(); toast("Soundtrack set"); if (TAB === "plan") renderPlan(); })
           .catch(e => toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"));
       }));
     } catch (e) {
@@ -1345,7 +1345,7 @@ export function initTracker() {
         <label class="fld"><span>Target (combined workouts)</span><input id="ch-target" type="number" inputmode="numeric" value="20" min="1"></label>
         <label class="fld"><span>Days</span><input id="ch-days" type="number" inputmode="numeric" value="30" min="1"></label>
       </div>
-      <button class="btn" data-act="savechallenge" style="width:100%;margin-top:4px">Create challenge 🔥</button></div>`;
+      <button class="btn" data-act="savechallenge" style="width:100%;margin-top:4px">Create challenge</button></div>`;
     document.body.appendChild(ov);
     setTimeout(() => document.getElementById("ch-title")?.focus(), 30);
   }
@@ -1418,7 +1418,7 @@ export function initTracker() {
       ${renderSquadMusic(members)}
       <div class="subhead">Squad activity</div>
       <div class="feed">${renderFeedPosts(feed, u.id)}</div>
-      <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:14px">↩ Leave squad</button>`;
+      <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:14px">Leave squad</button>`;
   }
 
   function timeAgo(iso) {
@@ -1630,7 +1630,7 @@ export function initTracker() {
       const u = cachedUser();
       (u ? saveProgramme(u.id, { sessions: prog.sessions, cycle }) : Promise.resolve({ synced: true }))
         .then(r => {
-          toast(r.synced ? "Week saved 💪" : "Week saved on this device — it'll sync when you're back online");
+          toast(r.synced ? "Week saved" : "Week saved on this device — it'll sync when you're back online");
           setTimeout(() => location.reload(), 650);
         });
     }
@@ -1649,7 +1649,7 @@ export function initTracker() {
       const fresh = defaultProgrammeData();
       (u ? saveProgramme(u.id, fresh) : Promise.resolve({ synced: true }))
         .then(r => {
-          toast(r.synced ? "New split loaded 💪" : "Split saved on this device — it'll sync when you're back online");
+          toast(r.synced ? "New split loaded" : "Split saved on this device — it'll sync when you're back online");
           setTimeout(() => location.reload(), 650);
         });
     }
@@ -1658,13 +1658,13 @@ export function initTracker() {
     else if (act === "createsquad") {
       const name = (document.getElementById("sq-name").value || "").trim();
       if (!name) { toast("Name your squad"); return; }
-      createSquad(name).then(() => { toast("Squad created 🔥"); renderSquad(); })
+      createSquad(name).then(() => { toast("Squad created"); renderSquad(); })
         .catch(e => toast(/relation|exist|function|schema/i.test(e.message || "") ? "Run migrate_4.sql first" : "Couldn't create squad"));
     }
     else if (act === "joinsquad") {
       const code = (document.getElementById("sq-join").value || "").trim();
       if (!code) { toast("Enter a code"); return; }
-      joinSquad(code).then(() => { toast("Joined the squad 🔥"); renderSquad(); })
+      joinSquad(code).then(() => { toast("Joined the squad"); renderSquad(); })
         .catch(e => toast(/invalid/i.test(e.message || "") ? "Invalid invite code" : "Couldn't join"));
     }
     else if (act === "leavesquad") {
@@ -1691,7 +1691,7 @@ export function initTracker() {
       if (!sid) { toast("No squad found"); return; }
       el.disabled = true;
       createChallenge(sid, cachedUser().id, title, target, days)
-        .then(() => { el.closest(".modal")?.remove(); toast("Challenge created 🔥"); renderSquad(); })
+        .then(() => { el.closest(".modal")?.remove(); toast("Challenge created"); renderSquad(); })
         .catch(e => { el.disabled = false; toast(/relation|exist|schema/i.test(e?.message || "") ? "Run migrate_6.sql in Supabase first" : "Couldn't create challenge"); });
     }
     else if (act === "delchallenge") {
@@ -1703,14 +1703,14 @@ export function initTracker() {
       const t = parseInt(v, 10);
       if (!t || t < 1) { toast("Enter a number of 1 or more"); return; }
       setCommitment(cachedUser().id, getCurrentSquad(), t)
-        .then(() => { toast("Locked in 💪"); renderSquad(); })
+        .then(() => { toast("Locked in"); renderSquad(); })
         .catch(e => toast(/relation|exist|schema/i.test(e?.message || "") ? "Run migrate_7.sql first" : "Couldn't save"));
     }
     else if (act === "nudge") {
       const name = el.dataset.name || "your squad-mate";
       el.disabled = true;
-      postActivity(cachedUser().id, getCurrentSquad(), "nudge", { title: `nudged ${name} to show up 👊` })
-        .then(() => { toast("Nudge sent 👊"); renderSquad(); })
+      postActivity(cachedUser().id, getCurrentSquad(), "nudge", { title: `nudged ${name} to show up` })
+        .then(() => { toast("Nudge sent"); renderSquad(); })
         .catch(() => { el.disabled = false; toast("Couldn't send nudge"); });
     }
     else if (act === "togglepriv") {
@@ -1729,7 +1729,7 @@ export function initTracker() {
       if (url && !safeMusicUrl(url)) { toast("Enter a valid http(s) link"); return; }
       el.disabled = true;
       setMusic(cachedUser().id, url, label)
-        .then(() => { toast(url ? "Soundtrack saved 🎧" : "Soundtrack cleared"); if (TAB === "plan") renderPlan(); })
+        .then(() => { toast(url ? "Soundtrack saved" : "Soundtrack cleared"); if (TAB === "plan") renderPlan(); })
         .catch(e => { el.disabled = false; toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"); });
     }
   });
@@ -1742,7 +1742,7 @@ export function initTracker() {
       const file = el.files[0]; el.value = "";
       toast("Uploading photo…");
       uploadAvatar(cachedUser().id, file)
-        .then(url => { PROFILE = { ...(PROFILE || {}), avatar_url: url }; renderHeader(); toast("Photo updated 📷"); if (TAB === "profile") renderProfile(); })
+        .then(url => { PROFILE = { ...(PROFILE || {}), avatar_url: url }; renderHeader(); toast("Photo updated"); if (TAB === "profile") renderProfile(); })
         .catch(e => toast(/bucket|not.?found|exist|policy|denied|row-level|violates/i.test(e?.message || "") ? "Run migrate_9.sql first" : "Couldn't upload that image"));
     }
     else if (el.id === "importfile" && el.files[0]) {

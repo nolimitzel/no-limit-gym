@@ -647,7 +647,7 @@ html{background:var(--base)} body{background:transparent}
 
 .h2-hero{display:flex;align-items:center;gap:18px;padding:18px;margin-bottom:12px}
 .h2-ring{width:128px;height:128px;flex-shrink:0}
-.h2-arc{transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1)}
+.h2-arc{stroke:var(--brand);transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1)}
 @keyframes h2fill{from{stroke-dashoffset:var(--c)}}
 .h2-arc{animation:h2fill 1s cubic-bezier(.2,.8,.2,1) both}
 .h2-ring-n{font-family:var(--cond);font-size:30px;font-weight:700;fill:var(--ink);font-variant-numeric:tabular-nums}
@@ -705,3 +705,64 @@ html{background:var(--base)} body{background:transparent}
 .h2-day.today span,.h2-day.today b{color:var(--ink)}
 @media (prefers-reduced-motion:reduce){.h2-arc{animation:none}}
 .h2-today p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ================= GLASS SWEEP — every screen ================================
+   Inside the app, "volt" becomes the neutral ink accent; the ONE loud element per
+   screen opts back in with --brand (Home ring · Train save · Progress charts).
+   Login/onboarding (body.chrome-hidden) keep full volt as their brand moment. */
+:root{--brand:#CCFF00}
+body:not(.chrome-hidden){--volt:#F2F3EF;--volt-ghost:rgba(255,255,255,.07);--volt-dim:rgba(255,255,255,.18)}
+
+.card,.ex,.stat,.linkbtn,.pick,.callout,.hero,.plan-day{
+  background:var(--glass);backdrop-filter:blur(26px) saturate(1.7);-webkit-backdrop-filter:blur(26px) saturate(1.7);
+  border:1px solid var(--glass-brd);box-shadow:var(--glass-hi),0 12px 30px rgba(0,0,0,.32)}
+.card,.ex,.callout,.hero,.plan-day{border-radius:22px}
+.stat,.pick,.linkbtn{border-radius:18px}
+.card.dark{background:rgba(0,0,0,.28)}
+.callout,.hero{border-left:1px solid var(--glass-brd);border-top:1px solid var(--glass-brd)}
+.linkbtn{padding:15px 16px;color:var(--ink);text-decoration:none}
+.linkbtn[style*="5a3030"]{border-color:rgba(255,90,90,.22)!important;color:#FF8A80}
+.pick .num{border-radius:12px;border-color:var(--glass-brd);background:var(--glass2)}
+.pick:active,.linkbtn:active{border-color:rgba(255,255,255,.3)}
+
+/* buttons: white primary, glass secondary */
+.btn{border-radius:16px;font-family:var(--sans,inherit);font-weight:700;text-transform:none;letter-spacing:0;font-size:15px;padding:15px}
+.btn.ghost{background:var(--glass2);color:var(--ink);border:1px solid var(--glass-brd)}
+.savebar{background:none;padding:10px 16px 12px;bottom:calc(var(--tabh) + var(--safe-b) + 18px)}
+.savebar .btn{background:var(--brand);color:#0A0B0A;box-shadow:0 10px 28px rgba(204,255,0,.18),0 10px 24px rgba(0,0,0,.5)}
+
+/* exercise cards */
+.ex-h{background:transparent;border-bottom:1px solid rgba(255,255,255,.06);padding:16px 16px 12px}
+.ex.cardio .ex-h{background:transparent}
+.last b{color:var(--ink)}
+.addset{color:var(--muted)}
+.set-row input,.field input,.inp,select.sel,.report{background:rgba(0,0,0,.28);border:1px solid var(--glass-brd);border-radius:12px}
+.set-row input:focus,.field input:focus,.inp:focus{border-color:rgba(255,255,255,.5);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+.set-row input.done{border-color:rgba(255,255,255,.35);background:rgba(255,255,255,.07)}
+select.sel{background-color:var(--glass)}
+
+/* stats + bars */
+.stat .n{font-weight:700}
+.bar{height:6px;border-radius:99px;background:rgba(255,255,255,.08)}
+.bar > i{border-radius:99px}
+.pr-row,.sq-member,.lb-row{border-bottom-color:rgba(255,255,255,.06)}
+
+/* tags lose the decorative look */
+.pill,.tag-yours,.sq-role{background:rgba(255,255,255,.06);color:var(--muted);border:1px solid var(--glass-brd);border-radius:6px}
+.tag-new{border-radius:6px}
+.week .d{border-radius:12px;background:var(--glass)}
+
+/* sheets & modals */
+.modal-box,.ed-pbox{background:rgba(22,24,21,.82);backdrop-filter:blur(30px) saturate(1.6);-webkit-backdrop-filter:blur(30px) saturate(1.6);
+  border:1px solid var(--glass-brd);border-bottom:0;border-top:1px solid rgba(255,255,255,.14);border-radius:26px 26px 0 0}
+.toast{border-radius:14px}
+.install-hint{border-radius:18px;border:1px solid var(--glass-brd);background:var(--glass)}
+
+/* rest timer: white fill, it's transient */
+.rb-fill{background:rgba(255,255,255,.10)}
+
+/* squad */
+.sq-code{color:var(--ink)}
+.sq-av{background:var(--glass2);border-color:var(--glass-brd)}
+.btn[data-act="weekly"]{background:var(--glass2);color:var(--ink);border:1px solid var(--glass-brd)}
+.plan-day .ph .n{border-radius:10px;border-color:var(--glass-brd);background:var(--glass2)}
