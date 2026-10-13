@@ -54,6 +54,10 @@ hasn't synced yet", so any failed push is silently undone on the next launch.
 - *Evidence:* Repro 6 — Tue+Wed = Back, then Wed → Rest in the programme editor: `TypeError: Cannot read properties of undefined (reading 'exercises')` at `renderToday`. Blank Home (the boot screen). Synced to cloud, so it follows the user to every device.
 - *Fix:* only delete a session when no other day references it; sanitize programmes on load (dangling refs → Rest); guard all session lookups.
 
+**C5 — History silently truncated after ~1,000 logged sets** · CONFIRMED (code) — *found during the fix phase*
+- *Where:* `cloudStore.loadAll` fetched `workout_sets` in one unpaginated request; Supabase's API caps responses at 1,000 rows by default. At ~20 sets/session × 5 sessions/week a user passes 1,000 sets in ~10 weeks, after which every launch overwrote local history with a truncated copy.
+- *Fix:* paginate every read; the merge never treats "missing from a read" as "deleted".
+
 ### HIGH
 
 **H1 — Async screens overwrite whatever tab you moved to** · CONFIRMED
@@ -135,3 +139,59 @@ Cloud `workout_sessions` are not duplicated by re-saves (delete+insert is idempo
 - **E2E regression (browser, test account):** re-run Repros 1–6; custom exercise survives restart and reuse; previous performance shown on reuse; schedule edit reflected in Train; ad hoc session in history; failed save gives honest feedback.
 - **RLS:** re-run the isolation suite after `migrate_11` is applied (owner action).
 - **Limitations:** no second account can be created or signed into from here; multi-user signup and cross-account tests are verified by policy/SQL review, not runtime.
+
+---
+
+# 5. Final report (after fixes) — `18cc232`
+
+## Results by finding
+| ID | Status | Verified by |
+|---|---|---|
+| C1 data loss on launch | **Fixed** | Repro 1 re-run: meal + dismissed hint survive restart; unit tests |
+| C2 false "saved" | **Fixed** | Repro 2 re-run: unsynced workout survives restart **and auto-uploads** (cloud count 0→1); honest toasts |
+| C3 "Back Day" bug | **Fixed (root cause)** | Repro 3 re-run: Tue edited to Rest stays Rest after restart and self-heals into the cloud |
+| C4 crash | **Fixed** | Repro 6 re-run: no crash, shared session kept; a broken programme written straight to the cloud boots fine and is repaired |
+| C5 1,000-row truncation | **Fixed** | Pagination in every read; merge test "absent ≠ deleted" |
+| H1 render race | **Fixed** | Repro 4 re-run: screen stays on Today |
+| H2 duplicate posts | **Fixed** | Repro 5 re-run: two saves → exactly 1 post |
+| H3 profile data exposure | **Fix written — needs `migrate_11`** | Client works before & after; re-run the RLS test after migrating |
+| H4 sign-up username clash | **Fix written — needs `migrate_11`** | SQL review only (accounts can't be created from here) |
+| H5 custom exercises wiped | **Fixed** | Union-merge unit test; still device-only until `migrate_10` runs |
+| H6 stale squad | **Fixed** | Code path; squad cached on every Squad load |
+| H7 Reset/Restore | **Fixed** | Code path (Reset not executed against real data) |
+| M1–M11 | **Fixed** | Unit tests (PRs, history), sweep, code review |
+| M12 squad join bypass | **Fix written — needs `migrate_11`** | Policy review |
+| L1–L8 | **Fixed** (L5 documented, not changed) | Sweep / review |
+
+## Tests executed
+- **Unit:** `npm test` → **22 / 22 pass** (sync merge, programme sanitising/schedule, history/PRs). None existed before.
+- **E2E regression:** all 6 original reproductions re-run against the fixed build → **6 / 6 pass**, plus a corrupted-cloud-programme boot test.
+- **RLS:** private-table isolation and cross-user write rejection → pass (pre-fix; unchanged).
+- **Sweep:** every screen + weekly review + quick session + picker → renders, **0 new runtime errors**.
+- **Build:** `vite build` → clean.
+- **Not executed:** multi-account sign-up, a second signed-in user, real password-reset email, Spotify now-playing, migration-dependent behaviour (H3/H4/M12/meals sync). Test data created during the audit was removed and the test account restored.
+
+## Files changed
+`src/core/{sync,programme,history}.js` (new) · `tests/*.test.js` (new) · `src/main.js` · `src/app.js` · `src/data/{cloudStore,programme,programmeStore,targets,customExercises,privacy,squad,spotify,supabaseClient}.js` · `src/auth/{auth,authUI,profile}.js` · `src/programme/editor.js` · `index.html` · `package.json` · `migrate_11.sql` (new) · `src/data/dataService.js` (deleted, dead code).
+
+## ⚠️ Required, in this order
+1. **Deploy the new build first** (drag `dist/` to Netlify, or push with env vars set).
+2. **Then run `migrate_10.sql`** (custom-exercise library).
+3. **Then run `migrate_11.sql`** (profile privacy, sign-up fix, squad-join policy, single active programme, meals sync).
+
+Running either migration while the *old* build is live is unsafe: old code would send existing users back through onboarding (overwriting their targets) after `migrate_11`, and would wipe custom exercises after `migrate_10`.
+
+## Known limitations / outstanding
+- **Reset on one device:** other devices still holding cached history will re-upload it on their next launch (the sync model never deletes on absence, by design, to rule out data loss).
+- **Conflicts:** an edit made offline on one device wins over a newer edit from another device for the same day/record (last-writer-on-device).
+- Meals sync across devices only after `migrate_11`; until then they persist on the device that logged them.
+- `app.js` is still a 1,600-line closure; core logic is now extracted and tested, UI code is not unit-tested.
+- Unused legacy tables (`exercises`, `programme_days`, `programme_exercises`) remain; harmless.
+
+## Remaining recommendations (by priority)
+1. Deploy + run the two migrations (above), then re-run the RLS isolation test.
+2. Clean up the ~8 test accounts in Supabase.
+3. Add E2E tests to CI (Playwright) for the six journeys reproduced here.
+4. Bound the Squad feed/post queries (paginate) before squads get large.
+5. Add edit/rename for custom exercises (history is already keyed safely, so this is now low-risk).
+6. Split `app.js` into per-screen modules over time.
