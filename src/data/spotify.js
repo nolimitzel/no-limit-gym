@@ -5,7 +5,8 @@
    unset, so the paste-a-link fallback always works. */
 const CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
 const REDIRECT  = location.origin + "/";
-const SCOPES    = "playlist-read-private playlist-read-collaborative user-read-currently-playing";
+// playback scopes power "auto-play my soundtrack when I start a workout" (Premium only)
+const SCOPES    = "playlist-read-private playlist-read-collaborative user-read-currently-playing user-read-playback-state user-modify-playback-state";
 const TKEY = "nl.spotify.tokens";
 const VKEY = "nl.spotify.verifier";
 const SKEY = "nl.spotify.state";
@@ -63,7 +64,9 @@ export async function handleSpotifyRedirect() {
 }
 
 function saveTokens(j) {
-  const t = { access: j.access_token, refresh: j.refresh_token, exp: Date.now() + (j.expires_in || 3600) * 1000 };
+  const prev = loadTokens();
+  const t = { access: j.access_token, refresh: j.refresh_token, exp: Date.now() + (j.expires_in || 3600) * 1000,
+              scope: j.scope || prev?.scope || "" };
   try { localStorage.setItem(TKEY, JSON.stringify(t)); } catch {}
 }
 function loadTokens() { try { return JSON.parse(localStorage.getItem(TKEY) || "null"); } catch { return null; } }
@@ -120,4 +123,53 @@ export async function getSpotifyPlaylists() {
     id: p.id, name: p.name, url: p.external_urls?.spotify,
     img: p.images?.[0]?.url || null, tracks: p.tracks?.total ?? null,
   }));
+}
+
+/* ---------- playback: start the training playlist ----------
+   Spotify's Web API can only play on a device that's already running Spotify
+   (phone app open recently, desktop, speaker). Needs Premium. Tokens granted
+   before playback scopes existed must reconnect once. */
+export function canControlPlayback() {
+  const t = loadTokens();
+  return !!(t && /user-modify-playback-state/.test(t.scope || ""));
+}
+export function spotifyPlaylistUri(url) {
+  const m = String(url || "").match(/(?:open\.spotify\.com\/(?:[a-z-]+\/)?playlist\/|spotify:playlist:)([A-Za-z0-9]{10,})/);
+  return m ? "spotify:playlist:" + m[1] : null;
+}
+async function call(method, path, body) {
+  const tok = await freshToken();
+  if (!tok) return { status: 0 };
+  const r = await fetch("https://api.spotify.com/v1" + path, {
+    method, headers: { Authorization: "Bearer " + tok, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let json = null;
+  try { if (r.status !== 204) json = await r.json(); } catch {}
+  return { status: r.status, json };
+}
+// → { result: "playing" | "already" | "no-device" | "premium" | "reconnect" | "error", device? }
+export async function playPlaylist(playlistUrl) {
+  const uri = spotifyPlaylistUri(playlistUrl);
+  if (!uri) return { result: "error" };
+  if (!canControlPlayback()) return { result: "reconnect" };
+  try {
+    const cur = await call("GET", "/me/player");
+    if (cur.status === 401) { disconnectSpotify(); return { result: "reconnect" }; }
+    if (cur.status === 200 && cur.json?.is_playing && cur.json?.context?.uri === uri)
+      return { result: "already", device: cur.json.device?.name };
+    let device = cur.status === 200 ? cur.json?.device : null;
+    if (!device || !device.id) {
+      const d = await call("GET", "/me/player/devices");
+      const list = (d.json && d.json.devices) || [];
+      device = list.find((x) => x.is_active) || list.find((x) => x.type === "Smartphone") || list[0] || null;
+    }
+    if (!device || !device.id) return { result: "no-device" };
+    const res = await call("PUT", "/me/player/play?device_id=" + encodeURIComponent(device.id), { context_uri: uri });
+    if (res.status === 204 || res.status === 202 || res.status === 200) return { result: "playing", device: device.name };
+    if (res.status === 404) return { result: "no-device" };
+    if (res.status === 403) return { result: /scope/i.test(res.json?.error?.message || "") ? "reconnect" : "premium" };
+    if (res.status === 401) { disconnectSpotify(); return { result: "reconnect" }; }
+    return { result: "error" };
+  } catch { return { result: "error" }; }
 }

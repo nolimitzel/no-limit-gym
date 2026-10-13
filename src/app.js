@@ -21,7 +21,7 @@ import { getCurrentSquad, setCurrentSquad, postActivity, getFeed, getWorkoutPost
 import { getPrivacy, setPrivacy, applyCloudPrivacy } from "./data/privacy.js";
 import { getMyCommitment, setCommitment, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
 import { getMusic, setMusic, safeMusicUrl } from "./data/music.js";
-import { spotifyConfigured, connectSpotify, isSpotifyConnected, disconnectSpotify, getSpotifyPlaylists, getNowPlaying } from "./data/spotify.js";
+import { spotifyConfigured, connectSpotify, isSpotifyConnected, disconnectSpotify, getSpotifyPlaylists, getNowPlaying, canControlPlayback, playPlaylist, spotifyPlaylistUri } from "./data/spotify.js";
 
 let _booted = false;
 export function initTracker() {
@@ -578,6 +578,21 @@ export function initTracker() {
     saveProgramme(u.id, progData()).then(r => { if (!r.synced) toast("Saved on this device — it'll sync when you're back online"); });
   }
 
+  /* Auto-play: starting a workout starts the training playlist on Spotify. Opt-out
+     per device; never on "Continue". Results are reported honestly. */
+  const AP_KEY = "nl.autoplay:" + (cachedUser()?.id || "local");
+  const autoplayOn = () => { try { return localStorage.getItem(AP_KEY) !== "off"; } catch { return true; } };
+  async function maybeAutoplay() {
+    const url = getMusic().url;
+    if (!isSpotifyConnected() || !autoplayOn() || !spotifyPlaylistUri(url)) return;
+    const label = getMusic().label || "your soundtrack";
+    const r = await playPlaylist(url);
+    if (r.result === "playing") toast(`Playing ${label}${r.device ? " on " + r.device : ""}`);
+    else if (r.result === "no-device") toast("Open Spotify on your phone, then your soundtrack starts with your workout");
+    else if (r.result === "premium") toast("Auto-play needs Spotify Premium");
+    else if (r.result === "reconnect") toast("Reconnect Spotify in Plan to turn on auto-play");
+  }
+
   function renderPicker() {
     const today = todayStr();
     const sched = cycleFor(today);
@@ -675,6 +690,7 @@ export function initTracker() {
     delete DAYSESS[ACTIVE];
     PICKSEL = [];
     go("train");
+    return true;
   }
 
   async function saveWorkout(session) {
@@ -1230,7 +1246,12 @@ export function initTracker() {
     const spotBlock = spotifyConfigured() ? (isSpotifyConnected()
       ? `<div class="spot-row"><span class="spot-badge">Spotify connected</span>
           <span class="spot-acts"><button class="lb-r" data-act="spotpick">Pick a playlist</button>
-            <button class="lb-r" data-act="spotoff">Disconnect</button></span></div>`
+            <button class="lb-r" data-act="spotoff">Disconnect</button></span></div>
+        ${canControlPlayback()
+          ? `<div class="priv-row ap-row"><span><b>Auto-play on Start</b><small>Starting a workout plays your soundtrack on Spotify. Premium; Spotify open on a device.</small></span>
+              <button class="toggle${autoplayOn() ? " on" : ""}" data-act="aptoggle" aria-label="Auto-play on Start"><i></i></button></div>`
+          : `<button class="btn ghost sm" data-act="spoton" style="margin-top:12px">Reconnect Spotify to turn on auto-play</button>
+             <p class="sq-ihint" style="margin:8px 0 0">One tap — Spotify asks for permission to start your playlist.</p>`}`
       : `<button class="btn sm spot-connect" data-act="spoton">Connect Spotify</button>
          <p class="sq-ihint" style="margin:8px 0 0">Authorize once, then pick a playlist to share — no typing a link.</p>`)
       : "";
@@ -1740,10 +1761,13 @@ export function initTracker() {
     const el = e.target.closest("[data-act]");
     if (!el) return;
     const act = el.dataset.act;
-    if (act === "start" || act === "pick") { ACTIVE = el.dataset.s; go("train"); }
+    if (act === "start" || act === "pick") {
+      ACTIVE = el.dataset.s; go("train");
+      if (act === "start" && !getLog(todayStr(), ACTIVE)) maybeAutoplay();
+    }
     else if (act === "picker") { ACTIVE = null; renderPicker(); }
     else if (act === "gotrain") { ACTIVE = null; go("train"); }
-    else if (act === "quickstart") startQuick();
+    else if (act === "quickstart") { startQuick(); if (!getLog(todayStr(), "quick")) maybeAutoplay(); }
     else if (act === "tchip") {
       const id = el.dataset.id;
       PICKSEL = PICKSEL.includes(id) ? PICKSEL.filter(x => x !== id) : [...PICKSEL, id];
@@ -1767,7 +1791,7 @@ export function initTracker() {
         paintChooser();
       });
     }
-    else if (act === "tstart") startChosen();
+    else if (act === "tstart") { const started = startChosen(); if (started && !getLog(todayStr(), ACTIVE)) maybeAutoplay(); }
     else if (act === "photoadd") document.getElementById("photo-file")?.click();
     else if (act === "photoview") openPhotoViewer(el.dataset.src, el.dataset.id);
     else if (act === "phopt") el.parentElement.querySelectorAll(".seg-b").forEach(b => b.classList.toggle("on", b === el));
@@ -2054,6 +2078,12 @@ export function initTracker() {
     else if (act === "spoton") { connectSpotify().catch(() => toast("Spotify isn't set up yet")); }
     else if (act === "spotoff") { disconnectSpotify(); toast("Spotify disconnected"); renderPlan(); }
     else if (act === "spotpick") { openSpotifyPicker(); }
+    else if (act === "aptoggle") {
+      const on = !autoplayOn();
+      try { localStorage.setItem(AP_KEY, on ? "on" : "off"); } catch {}
+      el.classList.toggle("on", on);
+      toast(on ? "Auto-play on — Start plays your soundtrack" : "Auto-play off");
+    }
     else if (act === "savemusic") {
       const url = (document.getElementById("mus-url")?.value || "").trim();
       const label = (document.getElementById("mus-label")?.value || "").trim();
