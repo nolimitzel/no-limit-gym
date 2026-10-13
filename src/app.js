@@ -362,9 +362,11 @@ export function initTracker() {
 
     const s = quick ? QUICK : P.sessions[ACTIVE];
     const existing = getLog(today, ACTIVE);
-    let html = `<div class="section-label">Log workout · ${esc(shortDate(today))}</div>
-      <h1 class="h-title">${esc(s.full)}</h1><p class="h-sub">${esc(s.sub)}${quick ? "" : " — tap to change day below"}.</p>
-      <button class="linkbtn" data-act="picker" style="padding:11px 15px;margin-bottom:16px">Switch session</button>`;
+    let html = `<div class="tr-top"><div class="section-label">Log workout · ${esc(shortDate(today))}</div>
+        <button class="tr-switch" data-act="picker">Switch</button></div>
+      <h1 class="h-title">${esc(s.full)}</h1>${s.sub ? `<p class="h-sub">${esc(s.sub)}</p>` : ""}
+      <div class="tp glass" id="tprog"><div class="tp-row"><span><b id="tp-n">0</b> of ${s.exercises.length} exercises</span>
+        <span id="tp-s">0 sets logged</span></div><div class="tp-bar"><i id="tp-bar"></i></div></div>`;
 
     if (quick && !s.exercises.length) {
       html += `<div class="card"><div class="empty" style="padding:18px">No exercises yet. Add what you're training today — from your library or create a new one.</div></div>`;
@@ -384,7 +386,7 @@ export function initTracker() {
                            ghost && ghost[i] ? ghost[i] : null);
       }
       const lastTxt = last
-        ? `Last (${esc(shortDate(last.date))}): <b>${last.sets.map(x => `${x.w}×${x.r}`).join("  ")}</b>`
+        ? `Last time · ${esc(shortDate(last.date))} <b>${last.sets.map(x => `${x.w}×${x.r}`).join("  ")}</b>`
         : `No history yet — set your baseline.`;
       html += `<div class="ex" data-ex="${ex.id}">
         <div class="ex-h">
@@ -409,7 +411,41 @@ export function initTracker() {
         <button class="btn" data-act="save" data-s="${ACTIVE}">Save workout</button>
       </div>`;
     view().innerHTML = html;
+    paintTrainProgress();
   }
+
+  /* Live workout progress: a set counts once its reps (cardio: minutes or rounds)
+     are entered. Logged sets dim and swap their number for a tick. */
+  const TICK = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  function paintTrainProgress() {
+    const bar = document.getElementById("tp-bar");
+    if (!bar) return;
+    const hdr = document.querySelector(".app-header");
+    if (hdr) document.documentElement.style.setProperty("--hdrh", hdr.offsetHeight + "px");
+    let rowsTotal = 0, rowsDone = 0, exTouched = 0;
+    document.querySelectorAll("#view .ex").forEach(card => {
+      const cardio = card.classList.contains("cardio");
+      const rows = [...card.querySelectorAll(".set-row")];
+      let done = 0;
+      rows.forEach((row, i) => {
+        const w = row.querySelector(".w"), r = row.querySelector(".r");
+        const filled = cardio ? !!(w.value || r.value) : !!r.value;
+        row.classList.toggle("filled", filled);
+        const sn = row.querySelector(".sn");
+        if (sn) sn.innerHTML = filled ? TICK : (cardio ? "·" : String(i + 1));
+        if (filled) done++;
+      });
+      rowsTotal += rows.length; rowsDone += done;
+      if (done) exTouched++;
+      card.classList.toggle("complete", rows.length > 0 && done === rows.length);
+    });
+    document.getElementById("tp-n").textContent = exTouched;
+    document.getElementById("tp-s").textContent = `${rowsDone} set${rowsDone === 1 ? "" : "s"} logged`;
+    bar.style.width = (rowsTotal ? Math.round(rowsDone / rowsTotal * 100) : 0) + "%";
+  }
+  document.addEventListener("input", (e) => {
+    if (e.target.closest && e.target.closest("#view .set-row")) paintTrainProgress();
+  });
 
   function setRowHtml(exId, i, pv, ghost) {
     const phW = ghost ? ghost.w : "–", phR = ghost ? ghost.r : "–";
@@ -1517,11 +1553,13 @@ export function initTracker() {
     else if (act === "addset") {
       const rows = document.querySelector(`.ex[data-ex="${el.dataset.ex}"] .rows`);
       rows.insertAdjacentHTML("beforeend", setRowHtml(el.dataset.ex, rows.children.length, null));
+      paintTrainProgress();
     }
     else if (act === "delset") {
       const row = el.closest(".set-row"); const rows = row.parentElement;
       row.remove();
       [...rows.children].forEach((r, i) => r.querySelector(".sn").textContent = i + 1);
+      paintTrainProgress();
     }
     else if (act === "savebw") {
       const v = parseFloat(document.getElementById("bw").value);
