@@ -19,6 +19,7 @@ import { getMySquad } from "./data/squad.js";
 import { setCurrentSquad } from "./data/social.js";
 import { loadPrivacy } from "./data/privacy.js";
 import { loadMusic } from "./data/music.js";
+import { loadCustomExercises } from "./data/customExercises.js";
 import { handleSpotifyRedirect } from "./data/spotify.js";
 import { setupPWA } from "./pwa.js";
 
@@ -30,6 +31,7 @@ async function bootApp(user) {
   setActiveTargets(tg);                                    // this user's nutrition targets
   loadPrivacy(user.id);                                    // what this user shares with their squad
   loadMusic(user.id);                                      // this user's training soundtrack
+  loadCustomExercises(user.id);                            // this user's custom exercise library
   getMySquad(user.id).then(sq => setCurrentSquad(sq?.id)).catch(() => {}); // cache squad for activity posts
   try {
     // 1) one-time legacy migration — the first account on this device claims it

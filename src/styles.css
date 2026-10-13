@@ -100,6 +100,10 @@ a{color:var(--volt)}
   font-weight:700;text-transform:uppercase;letter-spacing:.08em}
 .tag-new{font-size:8px;background:var(--volt);color:#0A0B0A;padding:2px 5px;border-radius:2px;
   letter-spacing:.1em;vertical-align:middle;margin-left:6px;font-weight:800}
+.tag-yours{font-size:8px;background:var(--volt-ghost);color:var(--volt);border:1px solid var(--volt);
+  padding:1px 5px;border-radius:2px;letter-spacing:.1em;vertical-align:middle;margin-left:6px;font-weight:800}
+.ed-create .ed-cgrp{flex-shrink:0;background:#0A0B0A;border:1px solid var(--line2);border-radius:6px;
+  color:var(--ink);font-size:12px;padding:0 6px;max-width:92px}
 
 /* ---------- today hero ---------- */
 .hero{background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--volt);

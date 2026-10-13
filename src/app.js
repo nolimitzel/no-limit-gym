@@ -10,6 +10,8 @@ import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
 import { getProfile, updateProfileBasics } from "./auth/profile.js";
 import { uploadAvatar } from "./data/storage.js";
+import { libExercise } from "./data/exerciseLibrary.js";
+import { getCustomExercises } from "./data/customExercises.js";
 import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
@@ -131,6 +133,10 @@ export function initTracker() {
       const e = P.sessions[sid].exercises.find(x => x.id === exId);
       if (e) return e;
     }
+    const lib = libExercise(exId);                       // static library
+    if (lib) return { name: lib.name, reps: lib.reps, sets: lib.sets, target: lib.group, cardio: lib.cardio };
+    const cx = getCustomExercises().find(c => c.key === exId);  // the user's custom library
+    if (cx) return { name: cx.name, reps: cx.reps, sets: cx.sets, target: cx.group, custom: true };
     return { name: exId, reps: "" };
   }
 

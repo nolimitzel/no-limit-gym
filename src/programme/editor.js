@@ -4,6 +4,7 @@
 import { getActiveProgramme } from "../data/programme.js";
 import { saveProgramme } from "../data/programmeStore.js";
 import { EXERCISE_LIBRARY, MUSCLE_GROUPS, toProgrammeExercise } from "../data/exerciseLibrary.js";
+import { getCustomExercises, addCustomExercise } from "../data/customExercises.js";
 import { cachedUser } from "../auth/auth.js";
 import { esc } from "../ui/safeRender.js";
 
@@ -105,9 +106,10 @@ function openPicker(dayIndex) {
   ov.className = "ed-picker";
   ov.innerHTML = `<div class="ed-pbox">
     <div class="ed-ptop"><b>Add exercise</b><button class="ed-pclose">✕</button></div>
-    <input class="ed-search" placeholder="Search exercises…" autocapitalize="none">
+    <input class="ed-search" placeholder="Search your library…" autocapitalize="none">
     <div class="ed-create"><input class="ed-cin" placeholder="…or create your own" autocapitalize="words">
-      <button class="ed-cadd">Create</button></div>
+      <select class="ed-cgrp">${MUSCLE_GROUPS.map((g) => `<option value="${g}">${g}</option>`).join("")}</select>
+      <button class="ed-cadd">Add</button></div>
     <div class="ed-plist">${pickerList("")}</div></div>`;
   document.body.appendChild(ov);
 
@@ -115,12 +117,26 @@ function openPicker(dayIndex) {
   ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
   ov.querySelector(".ed-pclose").addEventListener("click", close);
 
-  // create a custom exercise (stored in the programme itself)
-  const cin = ov.querySelector(".ed-cin");
-  const addCustom = () => {
-    const name = cin.value.trim(); if (!name) return;
+  const pushToDay = (ex) => {
     const s = daySession(dayIndex);
-    if (s) s.exercises.push({ id: "custom-" + Math.random().toString(36).slice(2, 8), name, target: "Custom", sets: 3, reps: "10–12" });
+    if (s && !s.exercises.some((x) => x.id === ex.id)) s.exercises.push(ex);
+  };
+  const resolve = (key) => {
+    const c = getCustomExercises().find((e) => e.key === key);
+    if (c) return { id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true };
+    return toProgrammeExercise(key);
+  };
+
+  // create a custom exercise: saved to the user's library AND added to this day
+  const cin = ov.querySelector(".ed-cin");
+  const grp = ov.querySelector(".ed-cgrp");
+  const addCustom = async () => {
+    const name = cin.value.trim(); if (!name) return;
+    const u = cachedUser();
+    try {
+      const ex = await addCustomExercise(u?.id, { name, group: grp.value });
+      pushToDay({ id: ex.key, name: ex.name, target: ex.group, sets: ex.sets, reps: ex.reps, custom: true });
+    } catch {}
     close(); render();
   };
   ov.querySelector(".ed-cadd").addEventListener("click", addCustom);
@@ -130,24 +146,19 @@ function openPicker(dayIndex) {
   search.addEventListener("input", () => { list.innerHTML = pickerList(search.value.toLowerCase()); bindItems(); });
 
   const bindItems = () => list.querySelectorAll(".ed-pi").forEach((it) =>
-    it.addEventListener("click", () => {
-      const s = daySession(dayIndex);
-      if (s && !s.exercises.some((x) => x.id === it.dataset.k)) {
-        s.exercises.push(toProgrammeExercise(it.dataset.k));
-      }
-      close(); render();
-    }));
+    it.addEventListener("click", () => { const ex = resolve(it.dataset.k); if (ex) pushToDay(ex); close(); render(); }));
   bindItems();
 }
 
 function pickerList(q) {
+  const custom = getCustomExercises();
   return MUSCLE_GROUPS.map((g) => {
-    const items = EXERCISE_LIBRARY.filter((e) => e.group === g &&
-      (!q || e.name.toLowerCase().includes(q) || g.toLowerCase().includes(q)));
+    const items = [...custom.filter((e) => e.group === g), ...EXERCISE_LIBRARY.filter((e) => e.group === g)]
+      .filter((e) => !q || e.name.toLowerCase().includes(q) || g.toLowerCase().includes(q));
     if (!items.length) return "";
     return `<div class="ed-pg">${g}</div>` + items.map((e) =>
       `<button class="ed-pi" data-k="${e.key}">
-        <span>${esc(e.name)}${e.cardio ? " 🔥" : ""}</span>
+        <span>${esc(e.name)}${e.custom ? ` <span class="tag-yours">YOURS</span>` : ""}${e.cardio ? " 🔥" : ""}</span>
         <small>${esc(e.equipment)} · ${esc(e.sets)}×${esc(e.reps)}</small></button>`).join("");
   }).join("");
 }
