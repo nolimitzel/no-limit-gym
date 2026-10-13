@@ -6,7 +6,9 @@
      undefined — legacy record from before sync tracking existed
    Rules:
      • cloud is authoritative for records this device already synced
-     • a synced record missing from the cloud was deleted elsewhere → dropped
+     • a local record missing from the cloud is KEPT and re-pushed — absence is
+       never treated as deletion, because a partial/truncated read must not be
+       able to destroy history (the app has no per-record delete)
      • pending records always win and are queued for re-push (never lost)
      • legacy records equal to their cloud copy become synced; otherwise pending
      • fields the cloud doesn't store (e.g. meals) are preserved from local */
@@ -19,8 +21,7 @@ export function mergeRecords(local = [], cloud = [], keyOf, { same = () => false
     const k = keyOf(l);
     const c = merged.get(k);
     const legacyInSync = l.synced === undefined && c && same(l, c);
-    if (l.synced === true || legacyInSync) {
-      if (!c) continue;                                   // deleted on another device
+    if (c && (l.synced === true || legacyInSync)) {
       for (const f of preserve) if (c[f] === undefined && l[f] !== undefined) c[f] = l[f];
       continue;
     }

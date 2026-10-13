@@ -29,6 +29,6 @@ export async function signOut() {
 export async function resetPassword(email) {
   return supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
 }
-export function onAuthChange(cb) {
-  return supabase.auth.onAuthStateChange((_event, session) => { _session = session; cb(session); });
+export async function updatePassword(password) {
+  return supabase.auth.updateUser({ password });
 }

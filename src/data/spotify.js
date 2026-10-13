@@ -8,7 +8,7 @@ const REDIRECT  = location.origin + "/";
 const SCOPES    = "playlist-read-private playlist-read-collaborative user-read-currently-playing";
 const TKEY = "nl.spotify.tokens";
 const VKEY = "nl.spotify.verifier";
-const STATE = "nlspotify";
+const SKEY = "nl.spotify.state";
 
 export function spotifyConfigured() { return !!CLIENT_ID; }
 
@@ -26,10 +26,12 @@ export async function connectSpotify() {
   if (!CLIENT_ID) throw new Error("no-client-id");
   const verifier = randStr(48);
   sessionStorage.setItem(VKEY, verifier);
+  const state = "nls-" + randStr(12);
+  sessionStorage.setItem(SKEY, state);
   const challenge = await sha256url(verifier);
   const p = new URLSearchParams({
     client_id: CLIENT_ID, response_type: "code", redirect_uri: REDIRECT,
-    code_challenge_method: "S256", code_challenge: challenge, scope: SCOPES, state: STATE,
+    code_challenge_method: "S256", code_challenge: challenge, scope: SCOPES, state,
   });
   location.href = "https://accounts.spotify.com/authorize?" + p.toString();
 }
@@ -41,7 +43,8 @@ export async function handleSpotifyRedirect() {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const verifier = sessionStorage.getItem(VKEY);
-  if (!code || state !== STATE || !verifier) return false;
+  const expected = sessionStorage.getItem(SKEY);
+  if (!code || !state || state !== expected || !verifier) return false;
   try {
     const body = new URLSearchParams({
       client_id: CLIENT_ID, grant_type: "authorization_code",
@@ -53,7 +56,7 @@ export async function handleSpotifyRedirect() {
     const j = await r.json();
     if (j.access_token) saveTokens(j);
   } catch (e) { console.warn("[NO LIMIT] Spotify token exchange failed", e); }
-  sessionStorage.removeItem(VKEY);
+  sessionStorage.removeItem(VKEY); sessionStorage.removeItem(SKEY);
   url.searchParams.delete("code"); url.searchParams.delete("state");
   history.replaceState({}, "", url.pathname + url.search + url.hash);
   return true;

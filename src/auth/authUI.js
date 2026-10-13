@@ -1,6 +1,6 @@
 /* Login / Sign-up / Forgot-password screens. Renders into #view, hides app chrome.
    On a live session it calls onAuthed(session); the caller routes to onboarding or app. */
-import { signIn, signUp, resetPassword } from "./auth.js";
+import { signIn, signUp, resetPassword, updatePassword } from "./auth.js";
 import { esc } from "../ui/safeRender.js";
 
 const view = () => document.getElementById("view");
@@ -98,3 +98,30 @@ function wire(onAuthed) {
 }
 
 const val = (id) => (document.getElementById(id)?.value || "").trim();
+
+/* Arrived via a password-reset email: the link signed the user in, so finish the
+   job by letting them choose a new password (AUDIT M9 — previously skipped). */
+export function mountSetPassword(onDone) {
+  document.body.classList.add("chrome-hidden");
+  const draw = (msg) => {
+    const note = msg ? `<div class="auth-note ${msg.ok ? "ok" : "err"}">${esc(msg.text)}</div>` : "";
+    view().innerHTML = `<div class="auth">
+      <div class="auth-brand"><img class="auth-logo" src="/brand/logo-mark.png" alt="NO LIMIT Gym"></div>
+      <h1 class="auth-h">Set a new password</h1>
+      <p class="auth-sub">You're signed in from your reset link — choose a new password to finish.</p>${note}
+      ${field("np-pass", "New password", "password", "new-password")}
+      ${field("np-pass2", "Confirm new password", "password", "new-password")}
+      <button class="btn" id="np-go">Save new password</button></div>`;
+    document.getElementById("np-go").addEventListener("click", async (e) => {
+      const a = val("np-pass"), b = val("np-pass2");
+      if (a.length < 6) return draw({ text: "Use 6 or more characters.", ok: false });
+      if (a !== b) return draw({ text: "Those passwords don't match.", ok: false });
+      e.currentTarget.disabled = true;
+      const { error } = await updatePassword(a);
+      if (error) return draw({ text: error.message, ok: false });
+      draw({ text: "Password updated — taking you in…", ok: true });
+      setTimeout(onDone, 900);
+    });
+  };
+  draw();
+}

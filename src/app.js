@@ -2,8 +2,11 @@
    NO LIMIT — Gym Tracker  (offline, on-device PWA)
    ========================================================================== */
 import { signOut, cachedUser } from "./auth/auth.js";
-import { pushWorkout, pushBodyweight, pushMacros } from "./data/cloudStore.js";
-import { getActiveProgramme } from "./data/programme.js";
+import { pushWorkout, pushBodyweight, pushMacros, deleteAllHistory } from "./data/cloudStore.js";
+import { getActiveProgramme, exMeta as resolveExercise } from "./data/programme.js";
+import { esc } from "./ui/safeRender.js";
+import * as H from "./core/history.js";
+import { weekdayPos, isSessionReferenced } from "./core/programme.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { openEditor } from "./programme/editor.js";
 import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
@@ -12,10 +15,10 @@ import { getProfile, updateProfileBasics } from "./auth/profile.js";
 import { uploadAvatar } from "./data/storage.js";
 import { libExercise, EXERCISE_LIBRARY, MUSCLE_GROUPS } from "./data/exerciseLibrary.js";
 import { getCustomExercises, addCustomExercise } from "./data/customExercises.js";
-import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
+import { getCurrentSquad, setCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
-import { getPrivacy, setPrivacy } from "./data/privacy.js";
-import { getMyCommitment, setCommitment, getSquadCommitments, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
+import { getPrivacy, setPrivacy, applyCloudPrivacy } from "./data/privacy.js";
+import { getMyCommitment, setCommitment, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
 import { getMusic, setMusic, safeMusicUrl } from "./data/music.js";
 import { spotifyConfigured, connectSpotify, isSpotifyConnected, disconnectSpotify, getSpotifyPlaylists, getNowPlaying } from "./data/spotify.js";
 
@@ -31,7 +34,7 @@ export function initTracker() {
   const isCardio = id => !!exMeta(id).cardio;
 
   /* ---------- storage ---------- */
-  const blank = () => ({ logs: [], body: [], macros: [], settings: {} });
+  const blank = () => ({ logs: [], body: [], macros: [], names: {}, settings: {} });
   function load() {
     try { return Object.assign(blank(), JSON.parse(localStorage.getItem(KEY)) || {}); }
     catch (e) { return blank(); }
@@ -62,28 +65,14 @@ export function initTracker() {
     x.setDate(x.getDate() + (g === 0 ? -6 : 1 - g));
     return ymd(x);
   }
-  function ensureAnchor() {
-    // Default (and one-time migration) anchors the week to Monday = Day 1 (Push):
-    // Mon Push · Tue Back · Wed Legs · Thu Rest · Fri Chest+Delts · Sat Arms · Sun Rest.
-    if (!DB.settings.anchorDate || !DB.settings.scheduleV2) {
-      DB.settings.anchorDate = mondayOnOrBefore(new Date());
-      DB.settings.anchorPos = 0;
-      DB.settings.scheduleV2 = true;
-      save();
-    }
-  }
-  // The 7-day cycle is authored Mon→Sun, so a day's position is simply its
-  // weekday (Mon=0 … Sun=6). Purely weekday-derived — no stored anchor to drift
-  // out of sync, so Home / Plan / Train always show the same thing for a date.
-  function posForDate(s) {
-    return (parseYmd(s).getDay() + 6) % 7;
-  }
-  function cycleFor(s) { return P.cycle[posForDate(s)]; }
-  function setTodayAs(pos) {
-    DB.settings.anchorDate = todayStr();
-    DB.settings.anchorPos = pos;
-    save();
-  }
+  // The 7-day cycle is authored Mon→Sun, so a day's slot is simply its weekday
+  // (core/programme.js). The programme is sanitised on load, so every training
+  // slot points at a session that exists; sess() still guards every lookup.
+  const posForDate = weekdayPos;
+  function cycleFor(s) { return P.cycle[posForDate(s)] || { type: "rest" }; }
+  const sess = (id) => P.sessions[id] || null;
+  const sessName = (id) => (id === "quick" ? "Quick session"
+    : (sess(id)?.full || sess(id)?.name || (DB.names && DB.names["@" + id]) || id));
   // first upcoming calendar date (incl. today) whose cycle position == p
   function nextDateForPos(p) {
     const t = new Date();
@@ -98,52 +87,67 @@ export function initTracker() {
   function getLog(date, session) {
     return DB.logs.find(l => l.date === date && l.session === session);
   }
+  // every write marks the record unsynced until the cloud confirms it (core/sync.js)
   function upsertLog(date, session, entries) {
     let l = getLog(date, session);
     if (!l) { l = { date, session, entries: {}, ts: Date.now() }; DB.logs.push(l); }
     l.entries = entries; l.ts = Date.now();
-    save();
+    markDirty(l);
+    return l;
   }
-  // most recent prior sets logged for an exercise (any session)
-  function lastSetsFor(exId, beforeDate) {
-    const rel = DB.logs
-      .filter(l => l.entries[exId] && l.entries[exId].length && (!beforeDate || l.date < beforeDate))
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
-    return rel.length ? { date: rel[0].date, sets: rel[0].entries[exId] } : null;
-  }
-  function allSetsFor(exId) {
-    const out = [];
-    DB.logs.slice().sort((a, b) => (a.date < b.date ? -1 : 1)).forEach(l => {
-      if (l.entries[exId] && l.entries[exId].length) {
-        const top = l.entries[exId].reduce((m, s) => (s.w > m.w ? s : m), l.entries[exId][0]);
-        const vol = l.entries[exId].reduce((t, s) => t + (s.w * s.r || 0), 0);
-        out.push({ date: l.date, top, vol });
-      }
-    });
-    return out;
-  }
-  function prFor(exId) {
-    let best = null;
-    DB.logs.forEach(l => (l.entries[exId] || []).forEach(s => {
-      if (s.w > 0 && (!best || s.w > best.w)) best = s;
-    }));
-    return best;
-  }
-  function exMeta(exId) {
-    for (const sid of SESSION_IDS) {
-      const e = P.sessions[sid].exercises.find(x => x.id === exId);
-      if (e) return e;
+
+  /* ---------- cloud sync ----------
+     A record is `synced:false` from the moment it's edited until the cloud
+     confirms THAT revision (rev guards against an edit landing mid-push). Failed
+     pushes stay queued and retry on reconnect / next launch — nothing is dropped,
+     and the user is told honestly whether it reached the cloud (AUDIT C1/C2). */
+  function markDirty(rec) { rec.rev = (rec.rev || 0) + 1; rec.synced = false; save(); }
+  async function pushRecord(kind, rec) {
+    const u = cachedUser(); if (!u) return false;
+    const rev = rec.rev;
+    try {
+      if (kind === "log") await pushWorkout(u.id, rec);
+      else if (kind === "body") await pushBodyweight(u.id, rec);
+      else await pushMacros(u.id, rec);
+      if (rec.rev === rev) { rec.synced = true; save(); }
+      return true;
+    } catch (e) {
+      console.warn("[NO LIMIT] kept on device, will retry sync:", kind, rec.date, e?.message || e);
+      return false;
     }
-    const lib = libExercise(exId);                       // static library
-    if (lib) return { name: lib.name, reps: lib.reps, sets: lib.sets, target: lib.group, cardio: lib.cardio };
-    const cx = getCustomExercises().find(c => c.key === exId);  // the user's custom library
-    if (cx) return { name: cx.name, reps: cx.reps, sets: cx.sets, target: cx.group, custom: true };
-    return { name: exId, reps: "" };
+  }
+  let SYNCING = false;
+  async function syncPending() {
+    if (SYNCING || !cachedUser()) return;
+    SYNCING = true;
+    try {
+      for (const [kind, list] of [["log", DB.logs], ["body", DB.body], ["macro", DB.macros]]) {
+        for (const rec of list.filter(r => r.synced === false)) {
+          if (!(await pushRecord(kind, rec))) return;          // offline — stop, retry later
+        }
+      }
+    } finally { SYNCING = false; }
+  }
+  async function saveAndSync(kind, rec, okMsg) {
+    markDirty(rec);
+    const ok = await pushRecord(kind, rec);
+    toast(ok ? okMsg : "Saved on this device — it'll sync when you're back online");
+  }
+  window.addEventListener("online", () => syncPending());
+  // history queries — pure + unit-tested, keyed by stable exercise key (core/history.js)
+  const lastSetsFor = (exId, beforeDate) => H.lastSetsFor(DB.logs, exId, beforeDate);
+  const allSetsFor = (exId) => H.allSetsFor(DB.logs, exId);
+  const prFor = (exId, beforeDate) => H.prFor(DB.logs, exId, beforeDate);
+  const isBodyweight = (exId) => H.isBodyweightHistory(DB.logs, exId);
+  const fmtSet = (s) => (Number(s.w) > 0 ? `${s.w}kg × ${s.r}` : `${s.r} reps`);
+  // single exercise resolver (programme → library → custom); falls back to the
+  // cloud name snapshot so deleted/renamed exercises still show their name
+  function exMeta(exId) {
+    return resolveExercise(exId) || { name: (DB.names && DB.names[exId]) || exId, reps: "" };
   }
 
   /* ---------- tiny DOM helpers ---------- */
   const view = () => document.getElementById("view");
-  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   // avatar: profile photo if set, else the name's initial, in a circle of class `cls`
   function avatarMarkup(name, url, cls) {
     const init = (String(name || "?").trim()[0] || "?").toUpperCase();
@@ -217,11 +221,11 @@ export function initTracker() {
     }
     const lifted = []; const seen = new Set();
     DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!seen.has(id) && !isCardio(id)) { seen.add(id); lifted.push(id); } }));
-    const prs = lifted.map(id => ({ id, pr: prFor(id) })).filter(x => x.pr && x.pr.w > 0).sort((a, b) => b.pr.w - a.pr.w);
+    const prs = lifted.map(id => ({ id, pr: prFor(id) })).filter(x => x.pr).sort((a, b) => (b.pr.w - a.pr.w) || (b.pr.r - a.pr.r));
     if (prs.length) {
       const t = prs[0];
       return `<div class="subhead">Progress snapshot</div>
-        <button class="linkbtn" data-act="goprogress">🏆 ${esc(exMeta(t.id).name)} — ${t.pr.w}kg × ${t.pr.r}
+        <button class="linkbtn" data-act="goprogress">🏆 ${esc(exMeta(t.id).name)} — ${esc(fmtSet(t.pr))}
           <small>Your heaviest lift. Tap for all PRs & trends.</small></button>`;
     }
     return `<div class="subhead">Progress snapshot</div>
@@ -284,7 +288,7 @@ export function initTracker() {
     const streak = myWeekStreak();
     const seen = new Set();
     DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!isCardio(id)) seen.add(id); }));
-    const prCount = [...seen].filter(id => { const p = prFor(id); return p && p.w > 0; }).length;
+    const prCount = [...seen].filter(id => !!prFor(id)).length;
     html += `<div class="home-stats">
       <div class="hs"><div class="n">${streak}<em>🔥</em></div><div class="l">Week streak</div></div>
       <div class="hs"><div class="n">${wk}</div><div class="l">This week</div></div>
@@ -422,7 +426,7 @@ export function initTracker() {
   function openExercisePicker(onPick) {
     const resolve = (key) => {
       const c = getCustomExercises().find(e => e.key === key);
-      if (c) return { id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true };
+      if (c) return { id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(c.cardio ? { cardio: true } : {}) };
       const e = libExercise(key);
       return e ? { id: e.key, name: e.name, target: e.group, sets: e.sets, reps: e.reps, ...(e.cardio ? { cardio: true } : {}) } : null;
     };
@@ -452,7 +456,7 @@ export function initTracker() {
     const cin = ov.querySelector(".ed-cin"), grp = ov.querySelector(".ed-cgrp");
     const add = async () => {
       const name = cin.value.trim(); if (!name) return;
-      try { const ex = await addCustomExercise(cachedUser()?.id, { name, group: grp.value }); onPick({ id: ex.key, name: ex.name, target: ex.group, sets: ex.sets, reps: ex.reps, custom: true }); } catch {}
+      try { const ex = await addCustomExercise(cachedUser()?.id, { name, group: grp.value }); onPick({ id: ex.key, name: ex.name, target: ex.group, sets: ex.sets, reps: ex.reps, custom: true, ...(ex.cardio ? { cardio: true } : {}) }); } catch {}
       close();
     };
     ov.querySelector(".ed-cadd").onclick = add;
@@ -488,27 +492,36 @@ export function initTracker() {
     view().innerHTML = html;
   }
 
-  function saveWorkout(session) {
+  async function saveWorkout(session) {
     const entries = {};
-    let count = 0;
+    let count = 0, blankWeight = 0;
     document.querySelectorAll(`.ex[data-ex]`).forEach(card => {
       const exId = card.dataset.ex;
+      const cardio = card.classList.contains("cardio");
+      const weighted = !cardio && (prFor(exId)?.w || 0) > 0;     // this lift is normally loaded
       const sets = [];
       card.querySelectorAll(".set-row").forEach(row => {
         const w = parseFloat(row.querySelector(".w").value);
         const r = parseInt(row.querySelector(".r").value, 10);
-        if (!isNaN(w) || !isNaN(r)) { sets.push({ w: isNaN(w) ? 0 : w, r: isNaN(r) ? 0 : r }); }
+        if (isNaN(w) && isNaN(r)) return;
+        if (isNaN(w) && r > 0 && weighted) blankWeight++;
+        sets.push({ w: isNaN(w) ? 0 : Math.max(0, w), r: isNaN(r) ? 0 : Math.max(0, r) });
       });
       if (sets.length) { entries[exId] = sets; count += sets.length; }
     });
     if (count === 0) { toast("Log at least one set"); return; }
-    upsertLog(todayStr(), session, entries);
-    const u = cachedUser();
-    if (u) pushWorkout(u.id, { date: todayStr(), session, entries }).catch(() => {});
-    const sid = getCurrentSquad();
-    if (u && sid && getPrivacy().workouts) postActivity(u.id, sid, "workout", { title: P.sessions[session]?.full || (session === "quick" ? "Quick session" : session), exercises: Object.keys(entries).length });
-    toast("Workout saved 💪");
+    // a grey placeholder is last time's number, not a value — don't silently log 0 kg (AUDIT M4)
+    if (blankWeight && !confirm(`${blankWeight} set${blankWeight === 1 ? " has" : "s have"} reps but no weight.\n\nSave as bodyweight (0 kg)? Tap Cancel to go back and add the weight.`)) return;
+    const firstSave = !getLog(todayStr(), session);
+    const rec = upsertLog(todayStr(), session, entries);
+    // one squad post per session — re-saving ("continue logging") no longer double-counts (AUDIT H2)
+    const u = cachedUser(), sid = getCurrentSquad();
+    if (firstSave && u && sid && getPrivacy().workouts) {
+      postActivity(u.id, sid, "workout", { title: sessName(session), exercises: Object.keys(entries).length });
+    }
     go("progress");
+    const ok = await pushRecord("log", rec);
+    toast(ok ? "Workout saved 💪" : "Saved on this device — it'll sync when you're back online");
   }
 
   /* ============================ PROGRESS ============================ */
@@ -556,12 +569,12 @@ export function initTracker() {
 
     // PRs
     html += `<div class="subhead">Personal records</div><div class="card">`;
-    const prs = lifted.map(id => ({ id, pr: prFor(id) })).filter(x => x.pr && x.pr.w > 0)
-      .sort((a, b) => b.pr.w - a.pr.w);
+    const prs = lifted.map(id => ({ id, pr: prFor(id) })).filter(x => x.pr)
+      .sort((a, b) => (b.pr.w - a.pr.w) || (b.pr.r - a.pr.r));
     if (prs.length) {
       prs.forEach(x => {
         html += `<div class="pr-row"><span>${esc(exMeta(x.id).name)}</span>
-          <span class="v">${x.pr.w} kg × ${x.pr.r}</span></div>`;
+          <span class="v">${esc(fmtSet(x.pr))}</span></div>`;
       });
     } else {
       html += `<div class="empty">Your heaviest set on each lift will appear here.</div>`;
@@ -580,12 +593,11 @@ export function initTracker() {
       <button class="linkbtn" data-act="backprogress" style="margin-bottom:16px">‹ Back to progress</button>`;
     if (!logs.length) html += `<div class="empty">No workouts logged yet. Train a session and it'll show here.</div>`;
     logs.forEach(l => {
-      const s = P.sessions[l.session];
-      const name = s ? (s.full || s.name) : l.session;
+      const name = sessName(l.session);
       const rows = Object.entries(l.entries).map(([id, sets]) => {
         const nm = exMeta(id).name;
-        const top = sets.reduce((m, x) => (x.w > m.w ? x : m), sets[0]);
-        const label = isCardio(id) ? `${top.w} min · ${top.r} rounds` : `${sets.length} × ${top.w}kg`;
+        const top = H.bestSet(sets);
+        const label = isCardio(id) ? `${top.w} min · ${top.r} rounds` : `${sets.length} set${sets.length === 1 ? "" : "s"} · best ${fmtSet(top)}`;
         return `<div class="hist-ex"><span>${esc(nm)}</span><span class="hist-m">${esc(label)}</span></div>`;
       }).join("");
       html += `<div class="hist-card">
@@ -598,7 +610,9 @@ export function initTracker() {
   function liftChart(id) {
     const hist = allSetsFor(id);
     if (hist.length < 2) return `<div class="empty">Need 2+ logged sessions of this lift to chart it. Keep logging!</div>`;
-    return svgLine(hist.map(h => ({ label: h.date, y: h.top.w })), "kg");
+    return isBodyweight(id)
+      ? svgLine(hist.map(h => ({ label: h.date, y: h.top.r })), " reps")
+      : svgLine(hist.map(h => ({ label: h.date, y: h.top.w })), "kg");
   }
 
   /* ---------- SVG line chart ---------- */
@@ -643,12 +657,6 @@ export function initTracker() {
     for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(mon.getDate() + i); days.push(ymd(d)); }
     return days;
   }
-  function topSet(sets) { return sets.reduce((m, s) => (s.w > m.w ? s : m), sets[0]); }
-  function allTimeTopBefore(id, beforeDate) {
-    let best = null;
-    DB.logs.forEach(l => { if (l.date < beforeDate) (l.entries[id] || []).forEach(s => { if (s.w > 0 && (!best || s.w > best.w)) best = s; }); });
-    return best;
-  }
   function weeklyReport() {
     const days = weekBounds();
     const today = todayStr();
@@ -659,56 +667,65 @@ export function initTracker() {
     L.push("Week: " + prettyShort(days[0]) + " – " + prettyShort(days[6]));
     L.push("");
 
-    // Training adherence
-    let done = 0, sched = 0; const tl = [];
+    // Training adherence — any session logged that day counts (a swapped or quick
+    // session is still training); only past days can be "missed" (AUDIT M2)
+    let done = 0, sched = 0, missed = 0; const tl = [];
     days.forEach((d, i) => {
       const c = cycleFor(d);
-      if (c.type === "rest") { tl.push(`—  ${dn[i]} · Rest`); return; }
-      sched++;
-      const log = getLog(d, c.session);
-      const nm = P.sessions[c.session].name;
-      if (log) { done++; const n = Object.keys(log.entries).filter(id => !isCardio(id)).length; tl.push(`✔  ${dn[i]} · ${nm} — ${n} exercises`); }
-      else tl.push(`${d > today ? "·" : "✘"}  ${dn[i]} · ${nm} — ${d > today ? "upcoming" : "NOT logged"}`);
+      const planned = c.type === "train" ? sessName(c.session) : null;
+      const dayLogs = DB.logs.filter(l => l.date === d);
+      if (planned) sched++;
+      if (dayLogs.length) {
+        if (planned) done++;
+        const what = dayLogs.map(l => sessName(l.session)).join(" + ");
+        const n = new Set(dayLogs.flatMap(l => Object.keys(l.entries).filter(id => !isCardio(id)))).size;
+        const swapped = planned && !dayLogs.some(l => l.session === c.session) ? ` (planned: ${planned})` : "";
+        tl.push(`✔  ${dn[i]} · ${what} — ${n} exercise${n === 1 ? "" : "s"}${swapped}`);
+      } else if (planned) {
+        if (d < today) missed++;
+        tl.push(`${d > today ? "·" : "✘"}  ${dn[i]} · ${planned} — ${d > today ? "upcoming" : d === today ? "not logged yet" : "NOT logged"}`);
+      } else tl.push(`—  ${dn[i]} · Rest`);
     });
-    L.push(`TRAINING — ${done}/${sched} sessions done`);
+    L.push(`TRAINING — ${done}/${sched} planned sessions done`);
     tl.forEach(x => L.push(x));
     L.push("");
 
-    // Key lifts vs before + PRs
+    // Key lifts: this week's best set vs the all-time best BEFORE this week, for the
+    // same exercise only — a different exercise is never reported as progress
     const weekLogs = DB.logs.filter(l => days.indexOf(l.date) >= 0);
     const exWeek = {};
     weekLogs.forEach(l => Object.entries(l.entries).forEach(([id, sets]) => {
       if (isCardio(id) || !sets.length) return;
-      const tp = topSet(sets);
-      if (!exWeek[id] || tp.w > exWeek[id].w) exWeek[id] = tp;
+      exWeek[id] = H.betterSet(exWeek[id], H.bestSet(sets));
     }));
     const lifts = Object.keys(exWeek);
     if (lifts.length) {
-      L.push("KEY LIFTS (top set vs before)");
+      L.push("KEY LIFTS (best set this week vs your best before)");
       const prs = [];
       lifts.forEach(id => {
-        const tp = exWeek[id], prev = allTimeTopBefore(id, days[0]);
+        const tp = exWeek[id], prev = prFor(id, days[0]);
+        const same = prev && Number(prev.w) === Number(tp.w) && Number(prev.r) === Number(tp.r);
         let tag;
-        if (!prev) { tag = "first time"; prs.push(`${exMeta(id).name} — ${tp.w}kg×${tp.r}`); }
-        else if (tp.w > prev.w) { tag = `▲ up from ${prev.w}kg`; prs.push(`${exMeta(id).name} — ${tp.w}kg×${tp.r}`); }
-        else if (tp.w < prev.w) tag = `▼ down from ${prev.w}kg`;
-        else tag = "= held";
-        L.push(`${exMeta(id).name}: ${tp.w}kg×${tp.r} (${tag})`);
+        if (!prev) tag = "first time — baseline set";
+        else if (!same && H.betterSet(prev, tp) === tp) { tag = `▲ PR, previous best ${fmtSet(prev)}`; prs.push(`${exMeta(id).name} — ${fmtSet(tp)}`); }
+        else if (same) tag = "= matched your best";
+        else tag = `below your best of ${fmtSet(prev)}`;
+        L.push(`${exMeta(id).name}: ${fmtSet(tp)} (${tag})`);
       });
       L.push("");
       if (prs.length) { L.push("🏆 PERSONAL RECORDS THIS WEEK"); prs.forEach(p => L.push("• " + p)); L.push(""); }
     }
 
-    // Cardio
-    const cardio = weekLogs.filter(l => l.entries["hiit"] && l.entries["hiit"].length).length;
-    L.push(`CARDIO — HIIT ${cardio}/3 sessions`);
+    // Cardio — any cardio exercise counts (no longer assumes one person's HIIT plan)
+    const cardio = weekLogs.filter(l => Object.keys(l.entries).some(id => isCardio(id))).length;
+    L.push(`CARDIO — ${cardio} session${cardio === 1 ? "" : "s"} with cardio`);
     L.push("");
 
     // Bodyweight
     const bw = DB.body.filter(b => days.indexOf(b.date) >= 0).sort((a, b) => (a.date < b.date ? -1 : 1));
     if (bw.length) {
       const s = bw[0].weight, e = bw[bw.length - 1].weight, dlt = +(e - s).toFixed(1);
-      L.push(`BODYWEIGHT — ${s}kg → ${e}kg (${dlt >= 0 ? "+" : ""}${dlt}kg this week) · target 76kg`);
+      L.push(`BODYWEIGHT — ${s}kg → ${e}kg (${dlt >= 0 ? "+" : ""}${dlt}kg this week)${PROFILE?.bw_target ? ` · target ${PROFILE.bw_target}kg` : ""}`);
     } else L.push("BODYWEIGHT — not logged this week");
     L.push("");
 
@@ -725,8 +742,7 @@ export function initTracker() {
 
     // Auto flags
     const flags = [];
-    if (done < sched) flags.push(`Missed ${sched - done} training session(s)`);
-    if (cardio < 3) flags.push(`Cardio ${cardio}/3 — ${3 - cardio} short`);
+    if (missed) flags.push(`Missed ${missed} planned session${missed === 1 ? "" : "s"}`);
     if (!bw.length) flags.push("No bodyweight logged");
     if (mac.length < 5) flags.push(`Only ${mac.length}/7 days of food logged`);
     if (flags.length) { L.push(""); L.push("⚠️ FLAGS"); flags.forEach(f => L.push("• " + f)); }
@@ -987,7 +1003,10 @@ export function initTracker() {
   const GOAL_LABELS = { lean_gain: "Lean gain", fat_loss: "Fat loss", strength: "Strength", maintain: "Maintain" };
   async function renderProfile() {
     const u = cachedUser();
-    if (!PROFILE && u) { try { PROFILE = await getProfile(u.id); renderHeader(); } catch {} }
+    if (!PROFILE && u) {
+      try { PROFILE = await getProfile(u.id); applyCloudPrivacy(PROFILE?.privacy); renderHeader(); } catch {}
+      if (TAB !== "profile") return;                     // user navigated away while loading (AUDIT H1)
+    }
     const p = PROFILE || {};
     const name = p.name || p.username || (u?.email || "Athlete").split("@")[0];
     const uname = p.username ? "@" + p.username : "";
@@ -996,11 +1015,11 @@ export function initTracker() {
     const total = DB.logs.length;
     const lifted = []; const seen = new Set();
     DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!seen.has(id) && !isCardio(id)) { seen.add(id); lifted.push(id); } }));
-    const prCount = lifted.filter(id => { const pr = prFor(id); return pr && pr.w > 0; }).length;
+    const prCount = lifted.filter(id => !!prFor(id)).length;
     const streak = myWeekStreak();
     const bw = DB.body.length ? DB.body[DB.body.length - 1].weight : null;
     const since = DB.logs.length ? DB.logs.map(l => l.date).sort()[0] : (u?.created_at || null);
-    const sinceTxt = since ? new Date(since).toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "—";
+    const sinceTxt = since ? (/^\d{4}-\d{2}-\d{2}$/.test(since) ? parseYmd(since) : new Date(since)).toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "—";
     const goalTxt = GOAL_LABELS[p.goal] || null;
     const mus = getMusic();
     const stat = (v, l) => `<div class="stat"><div class="n">${v}</div><div class="l">${l}</div></div>`;
@@ -1202,7 +1221,7 @@ export function initTracker() {
         const url = it.dataset.url, name = it.dataset.name;
         if (!url) { toast("That playlist has no shareable link"); return; }
         setMusic(cachedUser().id, url, name)
-          .then(() => { ov.remove(); toast("Soundtrack set 🎧"); renderPlan(); })
+          .then(() => { ov.remove(); toast("Soundtrack set 🎧"); if (TAB === "plan") renderPlan(); })
           .catch(e => toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"));
       }));
     } catch (e) {
@@ -1228,32 +1247,38 @@ export function initTracker() {
     document.body.appendChild(ov);
     setTimeout(() => document.getElementById("ch-title")?.focus(), 30);
   }
+  let SQUAD_TOKEN = 0;
   async function renderSquad() {
     const u = cachedUser();
+    const token = ++SQUAD_TOKEN;
+    // the user may have moved to another tab while this loaded — never paint over it (AUDIT H1)
+    const stale = () => token !== SQUAD_TOKEN || TAB !== "squad";
     view().innerHTML = `<div class="section-label">Your people</div><h1 class="h-title">Squad</h1>
       <div class="card"><div class="skel skel-row" style="width:55%"></div><div class="skel skel-row" style="width:80%"></div></div>
       <div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card" style="width:70%"></div>`;
     let squad;
     try { squad = await getMySquad(u.id); }
     catch (e) {
+      if (stale()) return;
       view().innerHTML = `<div class="section-label">Your people</div><h1 class="h-title">Squad</h1>
-        <div class="empty">Couldn't load squads.<br>If you just enabled this, make sure <b>migrate_4.sql</b> has run in Supabase.</div>`;
+        <div class="empty">Couldn't load your squad — check your connection and try again.</div>`;
       return;
     }
+    if (stale()) return;
+    setCurrentSquad(squad?.id);   // keep workout posts + pledges pointed at the right squad (AUDIT H6)
     if (!squad) return renderSquadJoin();
 
-    let members = [];
-    try { members = await getMembers(squad.id); } catch {}
-    let feed = [];
-    try { feed = await getFeed(squad.id); } catch {}
-    let allWp = [], ranked = [], challenges = [];
-    try { allWp = await getWorkoutPosts(squad.id, null); } catch {}
-    try { challenges = await getChallenges(squad.id); } catch {}
-    let myCommit = null, squadCommits = [], commitsAll = [];
-    try { myCommit = await getMyCommitment(u.id); } catch {}
-    try { squadCommits = await getSquadCommitments(squad.id); } catch {}
-    try { commitsAll = await getSquadCommitmentsAll(squad.id); } catch {}
+    // independent reads in parallel (was 8 sequential round-trips — AUDIT M10)
+    const safe = (p, fallback) => p.catch(() => fallback);
+    const [members, feed, allWp, challenges, myCommit, commitsAll] = await Promise.all([
+      safe(getMembers(squad.id), []), safe(getFeed(squad.id), []), safe(getWorkoutPosts(squad.id, null), []),
+      safe(getChallenges(squad.id), []), safe(getMyCommitment(u.id), null), safe(getSquadCommitmentsAll(squad.id), []),
+    ]);
+    if (stale()) return;
+    const thisWeek = weekStartISO();
+    const squadCommits = commitsAll.filter(c => c.week_start === thisWeek);
     const streaks = computeStreaks(commitsAll, allWp);
+    let ranked = [];
     {
       const cut = LB_RANGE ? Date.now() - LB_RANGE * 86400000 : 0;
       const counts = {};
@@ -1390,24 +1415,24 @@ export function initTracker() {
     }
     else if (act === "savebw") {
       const v = parseFloat(document.getElementById("bw").value);
-      if (isNaN(v)) { toast("Enter a weight"); return; }
-      const t = todayStr(); const ex = DB.body.find(b => b.date === t);
-      if (ex) ex.weight = v; else DB.body.push({ date: t, weight: v });
-      DB.body.sort((a, b) => (a.date < b.date ? -1 : 1)); save();
-      { const u = cachedUser(); if (u) pushBodyweight(u.id, { date: t, weight: v }).catch(() => {}); }
-      toast("Weight saved"); renderLog();
+      if (isNaN(v) || v <= 0 || v > 500) { toast("Enter a valid weight in kg"); return; }
+      const t = todayStr(); let rec = DB.body.find(b => b.date === t);
+      if (rec) rec.weight = v; else { rec = { date: t, weight: v }; DB.body.push(rec); }
+      DB.body.sort((a, b) => (a.date < b.date ? -1 : 1));
+      renderLog();
+      saveAndSync("body", rec, "Weight saved");
     }
     else if (act === "savemacro") {
-      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : v; };
+      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : Math.max(0, v); };
       const t = todayStr(); let m = DB.macros.find(x => x.date === t);
       if (!m) { m = { date: t }; DB.macros.push(m); }
       m.kcal = num("kcal"); m.protein = num("prot"); m.carbs = num("carbs"); m.fats = num("fats");
-      DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1)); save();
-      { const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fats: m.fats }).catch(() => {}); }
-      toast("Fuel logged"); renderLog();
+      DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1));
+      renderLog();
+      saveAndSync("macro", m, "Fuel logged");
     }
     else if (act === "addmeal") {
-      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : v; };
+      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : Math.max(0, v); };
       const ml = { name: (document.getElementById("ml-name").value || "").trim() || "Meal",
         kcal: num("ml-kcal"), protein: num("ml-prot"), carbs: num("ml-carbs"), fats: num("ml-fats") };
       if (!ml.kcal && !ml.protein && !ml.carbs && !ml.fats) { toast("Enter the meal's macros"); return; }
@@ -1417,9 +1442,9 @@ export function initTracker() {
       m.meals.push(ml);
       m.kcal = (m.kcal || 0) + ml.kcal; m.protein = (m.protein || 0) + ml.protein;
       m.carbs = (m.carbs || 0) + ml.carbs; m.fats = (m.fats || 0) + ml.fats;
-      DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1)); save();
-      { const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fats: m.fats }).catch(() => {}); }
-      toast("Meal added"); renderLog();
+      DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1));
+      renderLog();
+      saveAndSync("macro", m, "Meal added");
     }
     else if (act === "delmeal") {
       const idx = +el.dataset.idx, t = todayStr(), m = DB.macros.find(x => x.date === t);
@@ -1427,27 +1452,31 @@ export function initTracker() {
         const ml = m.meals.splice(idx, 1)[0];
         m.kcal = Math.max(0, (m.kcal || 0) - ml.kcal); m.protein = Math.max(0, (m.protein || 0) - ml.protein);
         m.carbs = Math.max(0, (m.carbs || 0) - ml.carbs); m.fats = Math.max(0, (m.fats || 0) - ml.fats);
-        save();
-        const u = cachedUser(); if (u) pushMacros(u.id, { date: t, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fats: m.fats }).catch(() => {});
         renderLog();
+        saveAndSync("macro", m, "Meal removed");
       }
     }
     else if (act === "edittargets") editTargets();
     else if (act === "savetargets") {
-      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : v; };
+      const num = id => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? 0 : Math.max(0, v); };
       const tg = { kcal: num("tg-kcal"), protein: num("tg-prot"), carbs: num("tg-carbs"), fats: num("tg-fats") };
       setActiveTargets(tg);
-      const u = cachedUser(); if (u) saveTargets(u.id, tg).catch(() => {});
       const mo = el.closest(".modal"); if (mo) mo.remove();
-      toast("Targets updated"); renderLog();
+      renderLog();
+      const u = cachedUser();
+      if (u) saveTargets(u.id, tg).then(r => toast(r.synced ? "Targets updated" : "Targets saved on this device — will sync when online"));
+      else toast("Targets updated");
     }
     else if (act === "ics") { download("gym-reminders.ics", buildICS(), "text/calendar"); toast("Open the file to add to Calendar"); }
     else if (act === "export") { download("gym-backup-" + todayStr() + ".json", JSON.stringify(DB, null, 2), "application/json"); toast("Backup downloaded"); }
     else if (act === "importbtn") { document.getElementById("importfile").click(); }
     else if (act === "reset") {
-      if (confirm("Erase ALL logs, bodyweight and macros? This cannot be undone.")) {
-        localStorage.removeItem(KEY); DB = load(); ensureAnchor(); toast("All data reset"); go("today");
-      }
+      // used to clear only this device — the next launch restored everything from the cloud (AUDIT H7)
+      if (!confirm("Erase ALL your workouts, bodyweight and nutrition logs — in the cloud and on this device?\n\nThis cannot be undone. Back up your data first if you might want it.")) return;
+      const u = cachedUser();
+      (u ? deleteAllHistory(u.id) : Promise.resolve())
+        .then(() => { localStorage.removeItem(KEY); DB = load(); toast("All data erased"); go("today"); })
+        .catch(() => toast("Couldn't reach the cloud — nothing was erased. Try again when online."));
     }
     else if (act === "hideinstall") { DB.settings.hideInstall = true; save(); renderToday(); }
     else if (act === "weekly") { showReport(); }
@@ -1487,12 +1516,13 @@ export function initTracker() {
       const cycle = [...document.querySelectorAll(".wk-sel")]
         .map(s => s.value === "__rest" ? { type: "rest" } : { type: "train", session: s.value });
       const prog = getActiveProgramme();
-      DB.settings.anchorDate = mondayOnOrBefore(new Date()); DB.settings.anchorPos = 0; DB.settings.scheduleV2 = true; save();
       el.disabled = true;
       const u = cachedUser();
-      (u ? saveProgramme(u.id, { sessions: prog.sessions, cycle }) : Promise.resolve())
-        .catch(err => console.warn("[NO LIMIT] week save cloud-sync failed (saved locally).", err?.message || err))
-        .finally(() => { toast("Week saved 💪"); setTimeout(() => location.reload(), 450); });
+      (u ? saveProgramme(u.id, { sessions: prog.sessions, cycle }) : Promise.resolve({ synced: true }))
+        .then(r => {
+          toast(r.synced ? "Week saved 💪" : "Week saved on this device — it'll sync when you're back online");
+          setTimeout(() => location.reload(), 650);
+        });
     }
     else if (act === "saveprofile") {
       const name = (document.getElementById("pf-name")?.value || "").trim();
@@ -1507,9 +1537,11 @@ export function initTracker() {
       if (!confirm("Load the 8 muscle-group sessions? This replaces your current programme structure (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged workout history stays — only the plan layout changes.")) return;
       const u = cachedUser();
       const fresh = defaultProgrammeData();
-      (u ? saveProgramme(u.id, fresh) : Promise.resolve())
-        .catch(err => console.warn("[NO LIMIT] split save cloud-sync failed (saved locally).", err?.message || err))
-        .finally(() => { toast("New split loaded 💪"); setTimeout(() => location.reload(), 500); });
+      (u ? saveProgramme(u.id, fresh) : Promise.resolve({ synced: true }))
+        .then(r => {
+          toast(r.synced ? "New split loaded 💪" : "Split saved on this device — it'll sync when you're back online");
+          setTimeout(() => location.reload(), 650);
+        });
     }
     else if (act === "history") renderHistory();
     else if (act === "backprogress") go("progress");
@@ -1527,7 +1559,7 @@ export function initTracker() {
     }
     else if (act === "leavesquad") {
       if (confirm("Leave this squad?"))
-        leaveSquad(el.dataset.sid, cachedUser().id).then(() => { toast("Left squad"); renderSquad(); }).catch(() => toast("Couldn't leave"));
+        leaveSquad(el.dataset.sid, cachedUser().id).then(() => { setCurrentSquad(null); toast("Left squad"); renderSquad(); }).catch(() => toast("Couldn't leave"));
     }
     else if (act === "copyinvite") {
       const code = el.dataset.code;
@@ -1539,7 +1571,6 @@ export function initTracker() {
     }
     else if (act === "lbrange") { LB_RANGE = parseInt(el.dataset.d, 10) || 0; renderSquad(); }
     else if (act === "newchallenge") openChallengeModal();
-    else if (act === "closemodal") el.closest(".modal")?.remove();
     else if (act === "savechallenge") {
       const title = (document.getElementById("ch-title")?.value || "").trim();
       const target = parseInt(document.getElementById("ch-target")?.value, 10) || 0;
@@ -1588,7 +1619,7 @@ export function initTracker() {
       if (url && !safeMusicUrl(url)) { toast("Enter a valid http(s) link"); return; }
       el.disabled = true;
       setMusic(cachedUser().id, url, label)
-        .then(() => { toast(url ? "Soundtrack saved 🎧" : "Soundtrack cleared"); renderPlan(); })
+        .then(() => { toast(url ? "Soundtrack saved 🎧" : "Soundtrack cleared"); if (TAB === "plan") renderPlan(); })
         .catch(e => { el.disabled = false; toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"); });
     }
   });
@@ -1597,7 +1628,6 @@ export function initTracker() {
     const el = e.target.closest("[data-act]");
     if (!el) return;
     if (el.dataset.act === "liftsel") { ACTIVE_LIFT = el.value; document.getElementById("liftchart").innerHTML = liftChart(el.value); }
-    else if (el.dataset.act === "setanchor") { setTodayAs(parseInt(el.value, 10)); toast("Schedule updated"); }
     else if (el.id === "avatar-file" && el.files[0]) {
       const file = el.files[0]; el.value = "";
       toast("Uploading photo…");
@@ -1610,8 +1640,13 @@ export function initTracker() {
       r.onload = () => {
         try {
           const d = JSON.parse(r.result);
-          DB = Object.assign(blank(), d); save(); toast("Backup restored"); go("today");
-        } catch (err) { toast("Couldn't read that file"); }
+          if (!d || !Array.isArray(d.logs)) throw new Error("not a backup");
+          DB = Object.assign(blank(), d, { settings: { ...DB.settings, ...(d.settings || {}) } });
+          // queue everything for upload — a restore used to be local-only and vanish on next launch (AUDIT H7)
+          for (const list of [DB.logs, DB.body, DB.macros]) for (const rec of list) { rec.rev = (rec.rev || 0) + 1; rec.synced = false; }
+          save(); go("today"); toast("Backup restored — syncing to your account…");
+          syncPending();
+        } catch (err) { toast("Couldn't read that file — is it a NO LIMIT backup?"); }
       };
       r.readAsText(el.files[0]);
     }
@@ -1621,8 +1656,11 @@ export function initTracker() {
     b.addEventListener("click", () => { if (b.dataset.tab === "train") ACTIVE = null; go(b.dataset.tab); }));
 
   /* ---------- boot ---------- */
-  ensureAnchor();
   renderHeader();
-  if (cachedUser()) getProfile(cachedUser().id).then(pr => { PROFILE = pr; renderHeader(); if (TAB === "today") renderToday(); }).catch(() => {});
+  if (cachedUser()) getProfile(cachedUser().id).then(pr => {
+    PROFILE = pr; applyCloudPrivacy(pr?.privacy); renderHeader();
+    if (TAB === "today") renderToday();
+  }).catch(() => {});
   go("today");
+  syncPending();                                          // retry anything saved offline earlier
 }

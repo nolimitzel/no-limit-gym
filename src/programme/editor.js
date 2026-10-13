@@ -7,6 +7,7 @@ import { EXERCISE_LIBRARY, MUSCLE_GROUPS, toProgrammeExercise } from "../data/ex
 import { getCustomExercises, addCustomExercise } from "../data/customExercises.js";
 import { cachedUser } from "../auth/auth.js";
 import { esc } from "../ui/safeRender.js";
+import { isSessionReferenced } from "../core/programme.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const view = () => document.getElementById("view");
@@ -38,6 +39,8 @@ function render() {
       return;
     }
     const s = work.sessions[c.session] || { exercises: [] };
+    // a session can be scheduled on several days; editing it changes all of them — say so
+    const also = work.cycle.map((x, k) => (k !== i && x.type === "train" && x.session === c.session ? DAYS[k] : null)).filter(Boolean);
     const rows = s.exercises.map((ex, j) => `
       <div class="ed-ex">
         <span class="ed-ex-n">${esc(ex.name)}${ex.cardio ? " 🔥" : ""}</span>
@@ -51,6 +54,7 @@ function render() {
       <div class="ed-day-h"><span class="ed-wd">${DAYS[i]}</span>
         <b class="ed-name" data-act="ed-rename" data-i="${i}">${esc(s.full || s.name || "Workout")}</b>
         <button class="ed-mini" data-act="ed-rest" data-i="${i}">Rest</button></div>
+      ${also.length ? `<div class="ed-empty" style="padding:2px 0 8px">Same session as ${also.join(", ")} — changes apply to every day it's on.</div>` : ""}
       ${rows || '<div class="ed-empty">No exercises yet</div>'}
       <button class="ed-add" data-act="ed-add" data-i="${i}">+ Add exercise</button></div>`;
   });
@@ -80,8 +84,13 @@ function wire() {
         if (name) { s.name = name; s.full = name; } return render();
       }
       if (act === "ed-rest") {
-        if (confirm("Make " + DAYS[i] + " a rest day? Its exercises will be removed.")) {
-          delete work.sessions[work.cycle[i].session]; work.cycle[i] = { type: "rest" };
+        const sid = work.cycle[i].session;
+        const shared = isSessionReferenced(work.cycle, sid, i);
+        if (confirm("Make " + DAYS[i] + " a rest day?" + (shared ? "" : " Its exercises will be removed."))) {
+          // only delete the session if no other day still uses it — deleting a shared
+          // session left other days pointing at nothing and crashed the app (AUDIT C4)
+          if (!shared) delete work.sessions[sid];
+          work.cycle[i] = { type: "rest" };
         } return render();
       }
       if (act === "ed-train") {
@@ -96,8 +105,10 @@ function wire() {
 async function doSave(btn) {
   btn.disabled = true; btn.textContent = "Saving…";
   const u = cachedUser();
-  try { if (u) await saveProgramme(u.id, work); } catch (e) { console.warn("[NO LIMIT] programme cloud save failed (saved locally).", e?.message || e); }
-  location.reload();   // reboot so the whole app uses the new programme
+  const r = u ? await saveProgramme(u.id, work) : { synced: true };
+  // be honest: an unsynced save is kept on this device and pushed on next launch (AUDIT C2/C3)
+  btn.textContent = r.synced ? "Saved ✓" : "Saved on device";
+  setTimeout(() => location.reload(), r.synced ? 300 : 1200);   // reboot so the whole app uses it
 }
 
 /* ---------- library picker ---------- */
@@ -123,7 +134,7 @@ function openPicker(dayIndex) {
   };
   const resolve = (key) => {
     const c = getCustomExercises().find((e) => e.key === key);
-    if (c) return { id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true };
+    if (c) return { id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(c.cardio ? { cardio: true } : {}) };
     return toProgrammeExercise(key);
   };
 
@@ -135,7 +146,7 @@ function openPicker(dayIndex) {
     const u = cachedUser();
     try {
       const ex = await addCustomExercise(u?.id, { name, group: grp.value });
-      pushToDay({ id: ex.key, name: ex.name, target: ex.group, sets: ex.sets, reps: ex.reps, custom: true });
+      pushToDay({ id: ex.key, name: ex.name, target: ex.group, sets: ex.sets, reps: ex.reps, custom: true, ...(ex.cardio ? { cardio: true } : {}) });
     } catch {}
     close(); render();
   };

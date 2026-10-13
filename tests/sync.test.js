@@ -40,9 +40,10 @@ test("legacy record that differs from the cloud is kept and queued (never silent
   assert.equal(out.logs[0].synced, false);
 });
 
-test("a synced record removed in the cloud (deleted on another device) is dropped", () => {
+test("C5: a synced record absent from a (possibly truncated) cloud read is kept and re-pushed, never deleted", () => {
   const out = mergeDB({ logs: [log("2026-10-01", "back", { x: [{ w: 1, r: 1 }] }, { synced: true })] }, { logs: [] });
-  assert.equal(out.logs.length, 0);
+  assert.equal(out.logs.length, 1);
+  assert.equal(out.logs[0].synced, false);
 });
 
 test("cloud is authoritative for already-synced records (multi-device update)", () => {

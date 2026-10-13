@@ -3,8 +3,9 @@
    SECURITY DEFINER RPCs. */
 import { supabase } from "./supabaseClient.js";
 
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const genCode = () =>
-  Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
+  Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
 
 export async function getMySquad(userId) {
   const { data: mem, error } = await supabase.from("squad_members")

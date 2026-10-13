@@ -1,8 +1,15 @@
 /* Profile + nutrition-target reads/writes. All RLS-protected (owner only). */
 import { supabase } from "../data/supabaseClient.js";
 
+/* The owner's full profile. After migrate_11, private columns (email, bodyweight,
+   goal, privacy…) are hidden from squad-mates, so the owner reads them through the
+   get_my_profile() RPC; before the migration the plain select still works. Throws
+   on a real failure so callers can tell "no profile" from "couldn't load". */
 export async function getProfile(userId) {
-  const { data } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+  const rpc = await supabase.rpc("get_my_profile");
+  if (!rpc.error) return rpc.data && rpc.data.id ? rpc.data : null;
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+  if (error) throw error;
   return data;
 }
 
@@ -15,9 +22,16 @@ export async function updateProfileBasics(userId, { name, username }) {
 }
 
 // A user still needs onboarding until they've set a goal.
+// Only a SUCCESSFUL read showing no goal means onboarding. A network failure used to
+// push existing users back through onboarding, overwriting their targets (AUDIT M8).
 export async function needsOnboarding(userId) {
-  const p = await getProfile(userId);
-  return !p || !p.goal;
+  try {
+    const p = await getProfile(userId);
+    return !p || !p.goal;
+  } catch (e) {
+    console.warn("[NO LIMIT] profile check failed — skipping onboarding this launch.", e?.message || e);
+    return false;
+  }
 }
 
 const TARGETS = {
