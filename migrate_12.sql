@@ -1,12 +1,12 @@
 -- ===========================================================================
--- NO LIMIT 2.0 — PHOTO GALLERY (run once; safe to re-run).
+-- NO LIMIT 2.0 - PHOTO GALLERY (run once; safe to re-run).
 -- Progress / flex photos that disappear after 4 weeks.
---   • Files live in a PRIVATE "photos" bucket under <uid>/… — never public URLs;
+--   * Files live in a PRIVATE "photos" bucket under <uid>/... - never public URLs;
 --     the app shows them through short-lived signed links.
---   • Each photo is Private (only you) or Squad (people who share a squad with you).
---   • created_at / expires_at are set by the database (28 days), not the phone,
---     and can't be edited afterwards — nobody can make a photo live longer.
---   • Expired photos are hidden everywhere immediately; their files are deleted by
+--   * Each photo is Private (only you) or Squad (people who share a squad with you).
+--   * created_at / expires_at are set by the database (28 days), not the phone,
+--     and can't be edited afterwards - nobody can make a photo live longer.
+--   * Expired photos are hidden everywhere immediately; their files are deleted by
 --     the owner's app on next open (Storage files can't be deleted from SQL).
 -- ===========================================================================
 
