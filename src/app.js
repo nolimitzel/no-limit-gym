@@ -1773,8 +1773,9 @@ export function initTracker() {
   });
 
   document.addEventListener("change", function (e) {
-    const el = e.target.closest("[data-act]");
-    if (!el) return;
+    // file inputs (avatar, backup restore) carry an id, not data-act — fall back to the target itself
+    const el = e.target.closest("[data-act]") || e.target;
+    if (!el || !el.dataset) return;
     if (el.dataset.act === "liftsel") { ACTIVE_LIFT = el.value; document.getElementById("liftchart").innerHTML = liftChart(el.value); }
     else if (el.id === "avatar-file" && el.files[0]) {
       const file = el.files[0]; el.value = "";
