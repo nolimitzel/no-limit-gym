@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { weekdayPos, sanitizeProgramme, sessionForDate, isSessionReferenced } from "../src/core/programme.js";
+import { weekdayPos, sanitizeProgramme, sessionForDate, isSessionReferenced, weeklyGoal, comboKey, comboParts, homeSessionFor } from "../src/core/programme.js";
 
 const S = (n) => ({ name: n, full: n, sub: "", exercises: [] });
 
@@ -44,4 +44,45 @@ test("C4: a session shared by two days is still referenced after removing one da
   const cycle = [{ type: "rest" }, { type: "train", session: "back" }, { type: "train", session: "back" }];
   assert.equal(isSessionReferenced(cycle, "back", 2), true);
   assert.equal(isSessionReferenced([{ type: "train", session: "back" }], "back", 0), false);
+});
+
+const REST7 = Array.from({ length: 7 }, () => ({ type: "rest" }));
+
+test("flexible: an all-rest schedule is valid (user picks on the day)", () => {
+  const { programme, changed } = sanitizeProgramme({ sessions: { chest: S("Chest") }, cycle: REST7, goal: 3 });
+  assert.equal(changed, false);
+  assert.equal(sessionForDate(programme, "2026-10-14"), null);
+});
+
+test("weekly goal: own goal wins, else scheduled days, else onboarding count, else 3", () => {
+  assert.equal(weeklyGoal({ goal: 2, cycle: REST7 }), 2);
+  const three = REST7.map((c, i) => (i < 3 ? { type: "train", session: "a" } : c));
+  assert.equal(weeklyGoal({ cycle: three }), 3);
+  assert.equal(weeklyGoal({ cycle: REST7 }, 5), 5);
+  assert.equal(weeklyGoal({ cycle: REST7 }), 3);
+  assert.equal(weeklyGoal({ goal: 9, cycle: REST7 }), 3);   // out of range ignored
+});
+
+test("sanitize drops an invalid goal", () => {
+  const { programme, changed } = sanitizeProgramme({ sessions: {}, cycle: REST7, goal: "lots" });
+  assert.equal(changed, true);
+  assert.equal(programme.goal, undefined);
+});
+
+test("combined sessions round-trip; a single session keeps its plain key", () => {
+  assert.equal(comboKey(["chest", "triceps"]), "chest+triceps");
+  assert.equal(comboKey(["back"]), "back");
+  assert.deepEqual(comboParts("chest+triceps"), ["chest", "triceps"]);
+  assert.deepEqual(comboParts("quick"), ["quick"]);
+});
+
+test("an exercise picked in a combined workout is remembered under the right session", () => {
+  const prog = { sessions: {
+    chest: { ...S("Chest"), exercises: [{ id: "flat-db-press", target: "Chest" }] },
+    triceps: { ...S("Triceps"), exercises: [] },
+    push: { ...S("Push"), exercises: [{ id: "x", target: "Shoulders" }] } } };
+  assert.equal(homeSessionFor(prog, ["chest", "triceps"], "flat-db-press", "Chest"), "chest");
+  assert.equal(homeSessionFor(prog, ["chest", "triceps"], "skull-crushers", "Triceps"), "triceps");
+  assert.equal(homeSessionFor(prog, ["chest", "push"], "arnold-press", "Shoulders"), "push");
+  assert.equal(homeSessionFor(prog, ["chest", "triceps"], "plank", "Core"), "chest");
 });

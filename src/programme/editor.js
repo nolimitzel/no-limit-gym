@@ -1,13 +1,14 @@
-/* Programme editor — build your own split.
-   Edits a working copy of { sessions, cycle }; Save persists (local + cloud) and
-   reloads so the whole app picks up the new programme. Cancel discards. */
+/* Workout editor — your workouts and their usual exercises.
+   Organised by WORKOUT, not by weekday: nobody's week is fixed, so every
+   workout (Chest, Back… or your own, like "Push") is editable whether or not it's
+   on the optional schedule. Edits a working copy of { sessions, cycle, goal };
+   Save persists (local + cloud) and reloads so the whole app picks it up. */
 import { getActiveProgramme } from "../data/programme.js";
 import { saveProgramme } from "../data/programmeStore.js";
 import { EXERCISE_LIBRARY, MUSCLE_GROUPS, toProgrammeExercise } from "../data/exerciseLibrary.js";
 import { getCustomExercises, addCustomExercise } from "../data/customExercises.js";
 import { cachedUser } from "../auth/auth.js";
 import { esc } from "../ui/safeRender.js";
-import { isSessionReferenced } from "../core/programme.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const view = () => document.getElementById("view");
@@ -16,87 +17,83 @@ let work, onCloseCb;
 export function openEditor(onClose) {
   onCloseCb = onClose;
   const p = getActiveProgramme();
-  work = JSON.parse(JSON.stringify({ sessions: p.sessions, cycle: p.cycle }));
+  work = JSON.parse(JSON.stringify({ sessions: p.sessions, cycle: p.cycle, ...(p.goal ? { goal: p.goal } : {}) }));
   render();
+  window.scrollTo(0, 0);
 }
 
-const newDayId = () => "day-" + Math.random().toString(36).slice(2, 7);
+const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "workout";
+function newId(name) {
+  let id = slug(name), n = 1;
+  while (work.sessions[id]) id = slug(name) + "-" + (++n);
+  return id;
+}
 
 function render() {
   let h = `<div class="ed">
     <div class="ed-top">
       <button class="ed-back" data-act="ed-back">‹ Back</button>
-      <b>Edit Programme</b>
+      <b>Your workouts</b>
       <button class="btn sm" data-act="ed-save">Save</button>
     </div>
-    <p class="ed-hint">Build each day from the library — add, reorder or remove. Changes save to your account.</p>`;
+    <p class="ed-hint">Each workout's usual exercises — Train loads these when you pick it, and you choose what to do on the day. Add, reorder or remove.</p>`;
 
-  work.cycle.forEach((c, i) => {
-    if (c.type === "rest") {
-      h += `<div class="ed-day rest">
-        <div class="ed-day-h"><span class="ed-wd">${DAYS[i]}</span><b class="ed-rest-label">Rest day</b>
-          <button class="ed-mini" data-act="ed-train" data-i="${i}">+ Training day</button></div></div>`;
-      return;
-    }
-    const s = work.sessions[c.session] || { exercises: [] };
-    // a session can be scheduled on several days; editing it changes all of them — say so
-    const also = work.cycle.map((x, k) => (k !== i && x.type === "train" && x.session === c.session ? DAYS[k] : null)).filter(Boolean);
+  // muscle groups in their natural order, then the user's own workouts
+  const rank = (id) => { const i = MUSCLE_GROUPS.findIndex((g) => g.toLowerCase() === id.toLowerCase()); return i < 0 ? 99 : i; };
+  Object.keys(work.sessions).sort((a, b) => rank(a) - rank(b)).forEach((id) => {
+    const s = work.sessions[id];
+    const onDays = work.cycle.map((c, k) => (c.type === "train" && c.session === id ? DAYS[k] : null)).filter(Boolean);
     const rows = s.exercises.map((ex, j) => `
       <div class="ed-ex">
         <span class="ed-ex-n">${esc(ex.name)}${ex.cardio ? ' <span class="tag-yours">CARDIO</span>' : ""}</span>
         <span class="ed-ex-m">${esc(ex.sets)}×${esc(ex.reps)}</span>
         <span class="ed-ctl">
-          <button data-act="ed-up" data-i="${i}" data-j="${j}">↑</button>
-          <button data-act="ed-down" data-i="${i}" data-j="${j}">↓</button>
-          <button data-act="ed-rm" data-i="${i}" data-j="${j}">✕</button>
+          <button data-act="ed-up" data-s="${esc(id)}" data-j="${j}" aria-label="Move up">↑</button>
+          <button data-act="ed-down" data-s="${esc(id)}" data-j="${j}" aria-label="Move down">↓</button>
+          <button data-act="ed-rm" data-s="${esc(id)}" data-j="${j}" aria-label="Remove">✕</button>
         </span></div>`).join("");
     h += `<div class="ed-day">
-      <div class="ed-day-h"><span class="ed-wd">${DAYS[i]}</span>
-        <b class="ed-name" data-act="ed-rename" data-i="${i}">${esc(s.full || s.name || "Workout")}</b>
-        <button class="ed-mini" data-act="ed-rest" data-i="${i}">Rest</button></div>
-      ${also.length ? `<div class="ed-empty" style="padding:2px 0 8px">Same session as ${also.join(", ")} — changes apply to every day it's on.</div>` : ""}
-      ${rows || '<div class="ed-empty">No exercises yet</div>'}
-      <button class="ed-add" data-act="ed-add" data-i="${i}">+ Add exercise</button></div>`;
+      <div class="ed-day-h"><span class="ed-wd">${onDays.length ? onDays.join(" ") : "Any day"}</span>
+        <b class="ed-name" data-act="ed-rename" data-s="${esc(id)}">${esc(s.full || s.name || "Workout")}</b>
+        <button class="ed-mini" data-act="ed-del" data-s="${esc(id)}">Delete</button></div>
+      ${rows || '<div class="ed-empty">No usual exercises — you\'ll pick them on the day.</div>'}
+      <button class="ed-add" data-act="ed-add" data-s="${esc(id)}">+ Add exercise</button></div>`;
   });
-  h += `</div>`;
+  h += `<button class="linkbtn" data-act="ed-new" style="margin-top:6px">+ New workout
+      <small>E.g. "Push", "Upper body", "Glutes" — mix any exercises.</small></button></div>`;
   view().innerHTML = h;
   wire();
 }
 
-function daySession(i) {
-  const c = work.cycle[i];
-  if (c.type !== "train") return null;
-  return (work.sessions[c.session] ||= { name: "Workout", full: "Workout", sub: "", exercises: [] });
-}
-
 function wire() {
   view().querySelectorAll("[data-act]").forEach((el) => {
-    const act = el.dataset.act, i = +el.dataset.i, j = +el.dataset.j;
+    const act = el.dataset.act, sid = el.dataset.s, j = +el.dataset.j;
+    const s = sid ? work.sessions[sid] : null;
     el.addEventListener("click", () => {
       if (act === "ed-back") return onCloseCb && onCloseCb();
       if (act === "ed-save") return doSave(el);
-      if (act === "ed-rm") { daySession(i).exercises.splice(j, 1); return render(); }
-      if (act === "ed-up" && j > 0) { const a = daySession(i).exercises; [a[j - 1], a[j]] = [a[j], a[j - 1]]; return render(); }
-      if (act === "ed-down") { const a = daySession(i).exercises; if (j < a.length - 1) { [a[j + 1], a[j]] = [a[j], a[j + 1]]; } return render(); }
-      if (act === "ed-add") return openPicker(i);
+      if (act === "ed-rm") { s.exercises.splice(j, 1); return render(); }
+      if (act === "ed-up" && j > 0) { const a = s.exercises; [a[j - 1], a[j]] = [a[j], a[j - 1]]; return render(); }
+      if (act === "ed-down") { const a = s.exercises; if (j < a.length - 1) { [a[j + 1], a[j]] = [a[j], a[j + 1]]; } return render(); }
+      if (act === "ed-add") return openPicker(sid);
       if (act === "ed-rename") {
-        const s = daySession(i); const name = prompt("Workout name", s.full || s.name);
-        if (name) { s.name = name; s.full = name; } return render();
+        const name = prompt("Workout name", s.full || s.name);
+        if (name && name.trim()) { s.name = name.trim(); s.full = name.trim(); } return render();
       }
-      if (act === "ed-rest") {
-        const sid = work.cycle[i].session;
-        const shared = isSessionReferenced(work.cycle, sid, i);
-        if (confirm("Make " + DAYS[i] + " a rest day?" + (shared ? "" : " Its exercises will be removed."))) {
-          // only delete the session if no other day still uses it — deleting a shared
-          // session left other days pointing at nothing and crashed the app (AUDIT C4)
-          if (!shared) delete work.sessions[sid];
-          work.cycle[i] = { type: "rest" };
-        } return render();
+      if (act === "ed-del") {
+        if (Object.keys(work.sessions).length <= 1) { alert("Keep at least one workout."); return; }
+        const days = work.cycle.map((c, k) => (c.type === "train" && c.session === sid ? DAYS[k] : null)).filter(Boolean);
+        if (!confirm(`Delete "${s.full || s.name}"?${days.length ? ` It comes off your schedule (${days.join(", ")}).` : ""} Workouts you've already logged are kept.`)) return;
+        delete work.sessions[sid];
+        // never leave a day pointing at a deleted workout (AUDIT C4)
+        work.cycle = work.cycle.map((c) => (c.type === "train" && c.session === sid ? { type: "rest" } : c));
+        return render();
       }
-      if (act === "ed-train") {
-        const name = prompt("Workout name for " + DAYS[i], "Workout"); if (!name) return;
-        const id = newDayId(); work.sessions[id] = { name, full: name, sub: "", exercises: [] };
-        work.cycle[i] = { type: "train", session: id }; return render();
+      if (act === "ed-new") {
+        const name = prompt("Name your workout", ""); if (!name || !name.trim()) return;
+        const id = newId(name.trim());
+        work.sessions[id] = { name: name.trim(), full: name.trim(), sub: "", exercises: [] };
+        render(); return openPicker(id);
       }
     });
   });
@@ -112,7 +109,7 @@ async function doSave(btn) {
 }
 
 /* ---------- library picker ---------- */
-function openPicker(dayIndex) {
+function openPicker(sessionId) {
   const ov = document.createElement("div");
   ov.className = "ed-picker";
   ov.innerHTML = `<div class="ed-pbox">
@@ -129,7 +126,7 @@ function openPicker(dayIndex) {
   ov.querySelector(".ed-pclose").addEventListener("click", close);
 
   const pushToDay = (ex) => {
-    const s = daySession(dayIndex);
+    const s = work.sessions[sessionId];
     if (s && !s.exercises.some((x) => x.id === ex.id)) s.exercises.push(ex);
   };
   const resolve = (key) => {

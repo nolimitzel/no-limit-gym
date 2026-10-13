@@ -6,13 +6,14 @@ import { pushWorkout, pushBodyweight, pushMacros, deleteAllHistory } from "./dat
 import { getActiveProgramme, exMeta as resolveExercise } from "./data/programme.js";
 import { esc } from "./ui/safeRender.js";
 import * as H from "./core/history.js";
-import { weekdayPos, isSessionReferenced } from "./core/programme.js";
+import { weekdayPos, isSessionReferenced, weeklyGoal, comboParts, comboKey, homeSessionFor } from "./core/programme.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { openEditor } from "./programme/editor.js";
 import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
 import { getProfile, updateProfileBasics } from "./auth/profile.js";
 import { uploadAvatar } from "./data/storage.js";
+import { uploadPhoto, listMyPhotos, listSquadPhotos, setPhotoVisibility, deletePhoto, purgeExpiredPhotos, daysLeft, PHOTO_DAYS } from "./data/photos.js";
 import { libExercise, EXERCISE_LIBRARY, MUSCLE_GROUPS } from "./data/exerciseLibrary.js";
 import { getCustomExercises, addCustomExercise } from "./data/customExercises.js";
 import { getCurrentSquad, setCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
@@ -29,8 +30,6 @@ export function initTracker() {
   const KEY = "gymtracker.v1:" + (cachedUser()?.id || "local");  // per-user local cache
   const P = getActiveProgramme();                                 // this user's programme
   const SESSION_IDS = Object.keys(P.sessions);
-  const NUMS = {};                                                // schedule day #s from the cycle
-  P.cycle.forEach((c, i) => { if (c.type === "train") NUMS[c.session] = i + 1; });
   const isCardio = id => !!exMeta(id).cardio;
 
   /* ---------- storage ---------- */
@@ -71,8 +70,13 @@ export function initTracker() {
   const posForDate = weekdayPos;
   function cycleFor(s) { return P.cycle[posForDate(s)] || { type: "rest" }; }
   const sess = (id) => P.sessions[id] || null;
+  const oneName = (k) => sess(k)?.full || sess(k)?.name || (DB.names && DB.names["@" + k]) || k;
   const sessName = (id) => (id === "quick" ? "Quick session"
-    : (sess(id)?.full || sess(id)?.name || (DB.names && DB.names["@" + id]) || id));
+    : (!comboParts(id).every(k => sess(k)) && DB.names && DB.names["@" + id]) || comboParts(id).map(oneName).join(" + "));
+  // the programme as stored (sessions + optional schedule + weekly goal)
+  const progData = (over = {}) => ({ sessions: P.sessions, cycle: P.cycle, ...(P.goal ? { goal: P.goal } : {}), ...over });
+  const hasSchedule = () => P.cycle.some(c => c.type === "train");
+  const goalNow = () => weeklyGoal(P, Array.isArray(PROFILE?.training_days) ? PROFILE.training_days.length : undefined);
   // first upcoming calendar date (incl. today) whose cycle position == p
   function nextDateForPos(p) {
     const t = new Date();
@@ -134,6 +138,8 @@ export function initTracker() {
     toast(ok ? okMsg : "Saved on this device — it'll sync when you're back online");
   }
   window.addEventListener("online", () => syncPending());
+  // photos live 4 weeks: quietly delete this user's expired files a few seconds after launch
+  setTimeout(() => purgeExpiredPhotos(cachedUser()?.id), 5000);
   // history queries — pure + unit-tested, keyed by stable exercise key (core/history.js)
   const lastSetsFor = (exId, beforeDate) => H.lastSetsFor(DB.logs, exId, beforeDate);
   const allSetsFor = (exId) => H.allSetsFor(DB.logs, exId);
@@ -296,52 +302,62 @@ export function initTracker() {
 
     // hero — the week's progress ring is the ONE volt element on this screen
     const days = weekBounds();
-    const planned = days.filter(d => cycleFor(d).type === "train").length;
+    const goal = goalNow();
     const done = days.filter(d => DB.logs.some(l => l.date === d)).length;
-    const pct = planned ? Math.min(1, done / planned) : (done ? 1 : 0);
+    const pct = Math.min(1, done / goal);
     const R = 52, C = 2 * Math.PI * R;
     const streak = myWeekStreak();
     const prCount = [...new Set(DB.logs.flatMap(l => Object.keys(l.entries)))].filter(id => !isCardio(id) && prFor(id)).length;
-    const toGo = Math.max(0, planned - done);
+    const toGo = Math.max(0, goal - done);
     html += `<div class="h2-hero glass">
-      <svg class="h2-ring" viewBox="0 0 128 128" aria-label="${done} of ${planned} sessions this week">
+      <svg class="h2-ring" viewBox="0 0 128 128" aria-label="${done} of ${goal} sessions this week">
         <circle cx="64" cy="64" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="11"/>
         <circle class="h2-arc" cx="64" cy="64" r="${R}" fill="none" stroke="var(--volt)" stroke-width="11" stroke-linecap="round"
           stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - pct)).toFixed(1)}" style="--c:${C.toFixed(1)}" transform="rotate(-90 64 64)"/>
-        <text x="64" y="66" text-anchor="middle" class="h2-ring-n">${done}/${planned}</text>
+        <text x="64" y="66" text-anchor="middle" class="h2-ring-n">${done}/${goal}</text>
         <text x="64" y="86" text-anchor="middle" class="h2-ring-l">this week</text>
       </svg>
       <div class="h2-stats">
         <div><b>${streak}</b><span>week streak</span></div>
         <div><b>${prCount}</b><span>personal records</span></div>
-        <div><b>${planned && toGo === 0 ? "Done" : toGo}</b><span>${planned && toGo === 0 ? "week complete" : "sessions to go"}</span></div>
+        <div><b>${toGo === 0 ? "Done" : toGo}</b><span>${toGo === 0 ? "goal hit this week" : `to hit your goal of ${goal}`}</span></div>
       </div></div>`;
 
     // today's workout — white (not volt) action: the ring keeps the spotlight
-    if (c.type === "rest") {
-      html += `<div class="h2-today glass"><small>Today</small><h2>Rest day</h2>
-        <p>Recover — walk, hydrate, hit your protein. Muscle is built now.</p>
-        <button class="h2-cta ghost" data-act="quickstart">Train anyway — quick session</button></div>`;
-    } else {
+    const todays = DB.logs.filter(l => l.date === today);
+    if (todays.length) {
+      const l = todays[todays.length - 1];
+      const n = Object.keys(l.entries).length;
+      html += `<div class="h2-today glass"><small>Today · logged</small><h2>${esc(sessName(l.session))}</h2>
+        <p>${n} exercise${n === 1 ? "" : "s"} done${todays.length > 1 ? ` · +${todays.length - 1} more session${todays.length > 2 ? "s" : ""}` : ""}</p>
+        <button class="h2-cta" data-act="pick" data-s="${esc(l.session)}">Continue workout ${ICON.arrow}</button>
+        <button class="h2-cta ghost" data-act="gotrain" style="margin-top:10px">Train something else</button></div>`;
+    } else if (c.type === "train" && sess(c.session)) {
       const s = sess(c.session);
       const n = s.exercises.length;
-      const doneToday = getLog(today, c.session);
-      html += `<div class="h2-today glass"><small>Today</small><h2>${esc(s.name)}</h2>
+      html += `<div class="h2-today glass"><small>Today · your schedule</small><h2>${esc(s.name)}</h2>
         <p>${n} exercise${n === 1 ? "" : "s"}${s.sub ? " · " + esc(s.sub) : ""}</p>
-        <button class="h2-cta" data-act="start" data-s="${c.session}">${doneToday ? "Continue workout" : "Start workout"} ${ICON.arrow}</button></div>`;
+        <button class="h2-cta" data-act="start" data-s="${esc(c.session)}">Start workout ${ICON.arrow}</button>
+        <button class="h2-cta ghost" data-act="gotrain" style="margin-top:10px">Train something else</button></div>`;
+    } else {
+      html += `<div class="h2-today glass"><small>Today</small><h2>What are you training?</h2>
+        <p>${done >= goal ? "Goal's hit — anything extra is a bonus. Or rest and recover." : "Pick your muscle groups and today's exercises."}</p>
+        <button class="h2-cta" data-act="gotrain">Choose workout ${ICON.arrow}</button></div>`;
     }
 
     html += homeProgress();
     html += homeMusicCard();
 
-    // the week at a glance
-    html += `<div class="h2-weekhd"><span>Your week</span><button data-act="weekedit">Edit</button></div><div class="h2-week glass">`;
+    // the week at a glance — what you actually trained, plus anything scheduled
+    html += `<div class="h2-weekhd"><span>Your week</span><button data-act="weekedit">Schedule</button></div><div class="h2-week glass">`;
     days.forEach(d => {
       const ce = cycleFor(d);
-      const logged = DB.logs.some(l => l.date === d);
-      const nm = ce.type === "rest" ? "Rest" : (sess(ce.session)?.name || "").split(" ")[0];
-      const cls = [d === today ? "today" : "", logged ? "done" : "", ce.type === "rest" ? "rest" : ""].join(" ");
-      html += `<div class="h2-day ${cls}"><span>${parseYmd(d).toLocaleDateString("en-GB", { weekday: "narrow" })}</span><i></i><b>${esc(nm)}</b></div>`;
+      const logs = DB.logs.filter(l => l.date === d);
+      const first = (k) => (oneName(comboParts(k)[0]) || "").split(" ")[0];
+      const nm = logs.length ? first(logs[0].session) + (logs.length > 1 || comboParts(logs[0].session).length > 1 ? "+" : "")
+        : ce.type === "train" && sess(ce.session) ? (sess(ce.session).name || "").split(" ")[0] : "";
+      const cls = [d === today ? "today" : "", logs.length ? "done" : "", !logs.length && ce.type !== "train" ? "rest" : ""].join(" ");
+      html += `<div class="h2-day ${cls}"><span>${parseYmd(d).toLocaleDateString("en-GB", { weekday: "narrow" })}</span><i></i><b>${esc(nm) || "&nbsp;"}</b></div>`;
     });
     html += `</div>`;
 
@@ -352,67 +368,62 @@ export function initTracker() {
   /* ============================ TRAIN ============================ */
   function renderTrain() {
     const today = todayStr();
-    const c = cycleFor(today);
-    // default to today's session if it's a training day, else keep ACTIVE, else show picker
-    if (!ACTIVE && c.type === "train") ACTIVE = c.session;
-
     if (!ACTIVE) return renderPicker();
     const quick = ACTIVE === "quick";
-    if (quick && !QUICK) startQuick();
-
-    const s = quick ? QUICK : P.sessions[ACTIVE];
+    const s = daySession(ACTIVE);
     const existing = getLog(today, ACTIVE);
     let html = `<div class="tr-top"><div class="section-label">Log workout · ${esc(shortDate(today))}</div>
         <button class="tr-switch" data-act="picker">Switch</button></div>
       <h1 class="h-title">${esc(s.full)}</h1>${s.sub ? `<p class="h-sub">${esc(s.sub)}</p>` : ""}
-      <div class="tp glass" id="tprog"><div class="tp-row"><span><b id="tp-n">0</b> of ${s.exercises.length} exercises</span>
+      <div class="tp glass" id="tprog"><div class="tp-row"><span><b id="tp-n">0</b> of <span id="tp-of">${s.exercises.length}</span> exercises</span>
         <span id="tp-s">0 sets logged</span></div><div class="tp-bar"><i id="tp-bar"></i></div></div>`;
 
-    if (quick && !s.exercises.length) {
-      html += `<div class="card"><div class="empty" style="padding:18px">No exercises yet. Add what you're training today — from your library or create a new one.</div></div>`;
+    if (!s.exercises.length) {
+      html += `<div class="card" id="tr-empty"><div class="empty" style="padding:18px">No exercises yet. Add what you're training today — from the full library or create your own.</div></div>`;
     }
-
-    s.exercises.forEach(ex => {
-      if (ex.cardio) { html += cardioCardHtml(ex, existing); return; }
-      const last = lastSetsFor(ex.id, today);
-      // Values only when continuing a workout already saved today;
-      // otherwise last session's numbers appear as ghost placeholders to beat.
-      const saved = existing ? existing.entries[ex.id] : null;
-      const ghost = !existing && last ? last.sets : null;
-      const nRows = Math.max(ex.sets, saved ? saved.length : 0, ghost ? ghost.length : 0);
-      let rows = "";
-      for (let i = 0; i < nRows; i++) {
-        rows += setRowHtml(ex.id, i, saved && saved[i] ? saved[i] : null,
-                           ghost && ghost[i] ? ghost[i] : null);
-      }
-      const lastTxt = last
-        ? `Last time · ${esc(shortDate(last.date))} <b>${last.sets.map(x => `${x.w}×${x.r}`).join("  ")}</b>`
-        : `No history yet — set your baseline.`;
-      html += `<div class="ex" data-ex="${ex.id}">
-        <div class="ex-h">
-          <div class="info"><b class="ex-link" data-act="exhist" data-ex="${ex.id}">${esc(ex.name)}${ex.isNew ? '<span class="tag-new">NEW</span>' : ""}</b>
-            <div class="meta">${esc(ex.target)}</div></div>
-          <div class="tgt">${esc(ex.reps)} reps<small>${ex.sets} sets</small></div>
-        </div>
-        <div class="last">${lastTxt}</div>
-        <div class="sets">
-          <div class="set-head"><span>Set</span><span>Weight (kg)</span><span>Reps</span><span></span></div>
-          <div class="rows">${rows}</div>
-        </div>
-        <div class="addset" data-act="addset" data-ex="${ex.id}">+ Add set</div>
-      </div>`;
-    });
-
-    if (quick) html += `<button class="linkbtn" data-act="quickadd" style="margin-top:4px">+ Add exercise
-      <small>From your library, or create a new one — it's saved for next time.</small></button>`;
+    html += `<div id="tr-list">${s.exercises.map(ex => exCardHtml(ex, existing, today)).join("")}</div>`;
+    html += `<button class="linkbtn" data-act="addex" style="margin-top:4px">+ Add exercise
+      <small>${quick ? "From the full library, or create your own." : "From the full library — it's remembered for next time."}</small></button>`;
 
     html += `<div style="height:70px"></div>
       <div class="savebar">
-        <button class="btn" data-act="save" data-s="${ACTIVE}">Save workout</button>
+        <button class="btn" data-act="save" data-s="${esc(ACTIVE)}">Save workout</button>
       </div>`;
     view().innerHTML = html;
     paintTrainProgress();
   }
+
+  function exCardHtml(ex, existing, today) {
+    if (ex.cardio) return cardioCardHtml(ex, existing);
+    const last = lastSetsFor(ex.id, today);
+    // Values only when continuing a workout already saved today;
+    // otherwise last session's numbers appear as ghost placeholders to beat.
+    const saved = existing ? existing.entries[ex.id] : null;
+    const ghost = !existing && last ? last.sets : null;
+    const nRows = Math.max(ex.sets || 3, saved ? saved.length : 0, ghost ? ghost.length : 0);
+    let rows = "";
+    for (let i = 0; i < nRows; i++) {
+      rows += setRowHtml(ex.id, i, saved && saved[i] ? saved[i] : null, ghost && ghost[i] ? ghost[i] : null);
+    }
+    const lastTxt = last
+      ? `Last time · ${esc(shortDate(last.date))} <b>${last.sets.map(x => `${x.w}×${x.r}`).join("  ")}</b>`
+      : `No history yet — set your baseline.`;
+    return `<div class="ex" data-ex="${esc(ex.id)}">
+      <div class="ex-h">
+        <div class="info"><b class="ex-link" data-act="exhist" data-ex="${esc(ex.id)}">${esc(ex.name)}${ex.isNew ? '<span class="tag-new">NEW</span>' : ""}</b>
+          <div class="meta">${esc(ex.target || "")}</div></div>
+        <div class="tgt">${esc(ex.reps || "")} reps<small>${esc(ex.sets || 3)} sets</small></div>
+        <button class="ex-rm" data-act="exrm" data-ex="${esc(ex.id)}" aria-label="Remove from today">${XMARK}</button>
+      </div>
+      <div class="last">${lastTxt}</div>
+      <div class="sets">
+        <div class="set-head"><span>Set</span><span>Weight (kg)</span><span>Reps</span><span></span></div>
+        <div class="rows">${rows}</div>
+      </div>
+      <div class="addset" data-act="addset" data-ex="${esc(ex.id)}">+ Add set</div>
+    </div>`;
+  }
+  const XMARK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
   /* Live workout progress: a set counts once its reps (cardio: minutes or rounds)
      are entered. Logged sets dim and swap their number for a tick. */
@@ -445,7 +456,17 @@ export function initTracker() {
   }
   document.addEventListener("input", (e) => {
     if (e.target.closest && e.target.closest("#view .set-row")) paintTrainProgress();
+    if (e.target.id === "ck-search") {
+      const q = e.target.value.trim().toLowerCase();
+      document.querySelectorAll("#view .ck-row").forEach(r => { r.style.display = !q || r.dataset.name.includes(q) ? "" : "none"; });
+      document.querySelectorAll("#view .ck-card").forEach(c => {
+        const any = [...c.querySelectorAll(".ck-row")].some(r => r.style.display !== "none");
+        c.style.display = any ? "" : "none";
+        if (c.previousElementSibling?.classList.contains("subhead")) c.previousElementSibling.style.display = any ? "" : "none";
+      });
+    }
   });
+  document.addEventListener("change", (e) => { if (e.target.classList?.contains("ck")) paintChooser(); });
 
   function setRowHtml(exId, i, pv, ghost) {
     const phW = ghost ? ghost.w : "–", phR = ghost ? ghost.r : "–";
@@ -465,6 +486,7 @@ export function initTracker() {
       <div class="ex-h">
         <div class="info"><b class="ex-link" data-act="exhist" data-ex="${ex.id}">${esc(ex.name)}</b><div class="meta">${esc(meta)}</div></div>
         <div class="tgt">${esc(ex.reps)}<small>cardio</small></div>
+        <button class="ex-rm" data-act="exrm" data-ex="${esc(ex.id)}" aria-label="Remove from today">${XMARK}</button>
       </div>
       <div class="sets">
         <div class="set-head"><span></span><span>Minutes</span><span>Rounds</span><span></span></div>
@@ -518,33 +540,141 @@ export function initTracker() {
     cin.onkeydown = e => { if (e.key === "Enter") add(); };
   }
 
-  let QUICK = null;   // freeform "train anything" session for today
-  function startQuick() {
-    QUICK = { full: "Quick Session", sub: "Train anything — add exercises as you go", exercises: [] };
-    const log = getLog(todayStr(), "quick");
+  /* ---------- today's workout: pick on the day ----------
+     Nobody's week is fixed. Train asks what you're training (one session or a
+     combination like Chest + Triceps), you tick today's exercises from the full
+     library, and your picks are remembered as that session's usual list. A log is
+     stored under the session key ("chest", "chest+triceps", "quick"), so history,
+     PRs and "last time" work across any combination — they're keyed by exercise. */
+  const DAYSESS = {};            // key → today's working session (incl. exercises added mid-workout)
+  let PICKSEL = [];              // sessions ticked on the "what are you training?" screen
+  const toEx = (key) => {
+    const c = getCustomExercises().find(e => e.key === key);
+    if (c) return { id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(c.cardio || c.group === "Cardio" ? { cardio: true } : {}) };
+    const e = libExercise(key);
+    return e ? { id: e.key, name: e.name, target: e.group, sets: e.sets, reps: e.reps, ...(e.cardio ? { cardio: true } : {}) } : null;
+  };
+  function buildSession(key) {
+    const ids = comboParts(key).filter(k => sess(k));
+    const s = key === "quick" || !ids.length
+      ? { full: "Quick session", sub: "Train anything — add exercises as you go", exercises: [] }
+      : ids.length === 1 ? { ...sess(ids[0]), exercises: [...sess(ids[0]).exercises] }
+      : { full: ids.map(k => sess(k).name || sess(k).full).join(" + "), sub: "",
+          exercises: ids.flatMap(k => sess(k).exercises).filter((e, i, a) => a.findIndex(x => x.id === e.id) === i) };
+    // anything already logged today stays on screen even if it's not in the usual list
+    const log = getLog(todayStr(), key);
     if (log) Object.keys(log.entries).forEach(id => {
-      const m = exMeta(id);
-      QUICK.exercises.push({ id, name: m.name, target: m.target || "", sets: m.sets || 3, reps: m.reps || "", cardio: m.cardio });
+      if (s.exercises.some(e => e.id === id)) return;
+      const m = exMeta(id) || { name: id };
+      s.exercises.push({ id, name: m.name, target: m.target || "", sets: m.sets || 3, reps: m.reps || "", ...(m.cardio ? { cardio: true } : {}) });
     });
-    ACTIVE = "quick"; go("train");
+    return s;
+  }
+  const daySession = (key) => (DAYSESS[key] ||= buildSession(key));
+  function startQuick() { ACTIVE = "quick"; go("train"); }
+  // persist the programme in the background (honest toast only if it fails to sync)
+  function saveProgrammeQuiet() {
+    const u = cachedUser(); if (!u) return;
+    saveProgramme(u.id, progData()).then(r => { if (!r.synced) toast("Saved on this device — it'll sync when you're back online"); });
   }
 
   function renderPicker() {
-    let html = `<div class="section-label">Choose session</div>
-      <h1 class="h-title">Train</h1><p class="h-sub">Train your plan, or start a quick session and pick as you go.</p>
-      <button class="pick quickpick" data-act="quickstart">
-        <span class="num"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
-        <span class="txt"><b>Quick session</b><span>No plan? Train anything — add exercises on the fly</span></span>
-        <span class="arw">›</span></button>
-      <div class="subhead">Your sessions</div>`;
-    SESSION_IDS.forEach(id => {
+    const today = todayStr();
+    const sched = cycleFor(today);
+    const suggested = sched.type === "train" && sess(sched.session) ? sched.session : null;
+    if (!PICKSEL.length && suggested) PICKSEL = [suggested];
+    PICKSEL = PICKSEL.filter(id => sess(id));
+    const todays = DB.logs.filter(l => l.date === today);
+    let html = `<div class="section-label">Train · ${esc(shortDate(today))}</div>
+      <h1 class="h-title">What are you training?</h1>
+      <p class="h-sub">Pick one, or combine a few. Your usual exercises load and you choose today's.</p>`;
+    if (todays.length) {
+      html += `<div class="card tr-today"><small>Today so far</small>` + todays.map(l =>
+        `<div class="tr-cont"><span><b>${esc(sessName(l.session))}</b><em>${Object.keys(l.entries).length} exercises logged</em></span>
+          <button class="tr-switch" data-act="pick" data-s="${esc(l.session)}">Continue</button></div>`).join("") + `</div>`;
+    }
+    if (suggested) html += `<p class="tr-sug">Your schedule says <b>${esc(sess(suggested).name)}</b> today — or pick anything.</p>`;
+    // muscle groups in their natural order, then the user's own workouts
+    const rank = (id) => { const i = MUSCLE_GROUPS.findIndex(g => g.toLowerCase() === id.toLowerCase()); return i < 0 ? 99 : i; };
+    const order = [...SESSION_IDS].sort((a, b) => rank(a) - rank(b));
+    html += `<div class="tc-grid">` + order.map(id => {
       const s = P.sessions[id];
-      html += `<button class="pick" data-act="pick" data-s="${id}">
-        <span class="num">${NUMS[id] ? "D" + NUMS[id] : "•"}</span>
-        <span class="txt"><b>${esc(s.full)}</b><span>${esc(s.sub)}</span></span>
-        <span class="arw">›</span></button>`;
-    });
+      return `<button class="tc-chip glass${PICKSEL.includes(id) ? " on" : ""}" data-act="tchip" data-id="${esc(id)}">
+        <b>${esc(s.name || s.full)}</b><small>${s.exercises.length ? s.exercises.length + " usual" : "Pick exercises"}</small></button>`;
+    }).join("") + `</div>`;
+    html += `<button class="btn" id="tgo" data-act="tgo"${PICKSEL.length ? "" : " disabled"}>${pickLabel()}</button>
+      <button class="linkbtn" data-act="quickstart" style="margin-top:10px">Empty session<small>Skip the list and add exercises as you go.</small></button>`;
     view().innerHTML = html;
+  }
+  const pickLabel = () => PICKSEL.length
+    ? `Choose exercises · ${PICKSEL.map(id => sess(id).name || sess(id).full).join(" + ")}`
+    : "Pick what you're training";
+
+  // which muscle groups a session draws from: its own group (sectors are keyed by
+  // group) plus the groups of the exercises it already holds
+  function groupsFor(ids) {
+    const gs = new Set();
+    ids.forEach(id => {
+      const m = MUSCLE_GROUPS.find(g => g.toLowerCase() === id.toLowerCase());
+      if (m) gs.add(m);
+      sess(id).exercises.forEach(e => { const g = MUSCLE_GROUPS.find(x => x.toLowerCase() === String(e.target || "").toLowerCase()); if (g) gs.add(g); });
+    });
+    return gs.size ? [...gs] : MUSCLE_GROUPS;
+  }
+  let CHOOSE_ALL = false;
+  function renderChooser() {
+    const ids = PICKSEL.filter(id => sess(id));
+    if (!ids.length) return renderPicker();
+    const usual = ids.flatMap(id => sess(id).exercises).filter((e, i, a) => a.findIndex(x => x.id === e.id) === i);
+    const usualIds = new Set(usual.map(e => e.id));
+    const groups = CHOOSE_ALL ? MUSCLE_GROUPS : groupsFor(ids);
+    const custom = getCustomExercises();
+    const row = (key, name, meta, on) => `<label class="ck-row" data-name="${esc(name.toLowerCase())}">
+        <input type="checkbox" class="ck" data-k="${esc(key)}"${on ? " checked" : ""}><span class="ck-box"></span>
+        <span class="ck-t"><b>${esc(name)}</b><small>${esc(meta)}</small></span></label>`;
+    let html = `<div class="tr-top"><div class="section-label">Today's exercises</div>
+        <button class="tr-switch" data-act="picker">Back</button></div>
+      <h1 class="h-title">${esc(ids.map(id => sess(id).name || sess(id).full).join(" + "))}</h1>
+      <p class="h-sub">Tick what you're doing today. Your picks are remembered for next time.</p>
+      <input class="inp ck-search" id="ck-search" placeholder="Search ${CHOOSE_ALL ? "every" : "these"} exercises…" autocapitalize="none">`;
+    if (usual.length) html += `<div class="subhead">Your usual</div><div class="card ck-card">` +
+      usual.map(e => row(e.id, e.name, `${e.target || ""} · ${e.sets}×${e.reps}`, true)).join("") + `</div>`;
+    groups.forEach(g => {
+      const items = [...custom.filter(e => e.group === g), ...EXERCISE_LIBRARY.filter(e => e.group === g)].filter(e => !usualIds.has(e.key));
+      if (!items.length) return;
+      html += `<div class="subhead">${esc(g)} · library</div><div class="card ck-card">` +
+        items.map(e => row(e.key, e.name, `${e.custom ? "Yours" : e.equipment} · ${e.sets}×${e.reps}`, false)).join("") + `</div>`;
+    });
+    if (!CHOOSE_ALL) html += `<button class="linkbtn" data-act="ckall">Show every muscle group<small>Add anything from the full library.</small></button>`;
+    html += `<button class="linkbtn" data-act="ckcustom">+ Create your own exercise<small>Saved to your library.</small></button>
+      <div style="height:70px"></div>
+      <div class="savebar"><button class="btn" id="ck-go" data-act="tstart">Start workout</button></div>`;
+    view().innerHTML = html;
+    paintChooser();
+  }
+  function paintChooser() {
+    const n = document.querySelectorAll("#view .ck:checked").length;
+    const b = document.getElementById("ck-go");
+    if (b) b.textContent = n ? `Start workout · ${n} exercise${n === 1 ? "" : "s"}` : "Tick at least one exercise";
+  }
+  function startChosen() {
+    const ids = PICKSEL.filter(id => sess(id));
+    const keys = [...document.querySelectorAll("#view .ck:checked")].map(c => c.dataset.k);
+    if (!keys.length) { toast("Tick at least one exercise"); return; }
+    // remember today's picks as each session's usual list (keeping any custom sets/reps)
+    const next = Object.fromEntries(ids.map(id => [id, []]));
+    keys.forEach(k => {
+      const existingEx = ids.map(id => sess(id).exercises.find(e => e.id === k)).find(Boolean);
+      const ex = existingEx || toEx(k);
+      if (!ex) return;
+      next[homeSessionFor(P, ids, k, ex.target)].push(ex);
+    });
+    ids.forEach(id => { P.sessions[id].exercises = next[id]; });
+    saveProgrammeQuiet();
+    ACTIVE = comboKey(ids);
+    delete DAYSESS[ACTIVE];
+    PICKSEL = [];
+    go("train");
   }
 
   async function saveWorkout(session) {
@@ -724,24 +854,24 @@ export function initTracker() {
 
     // Training adherence — any session logged that day counts (a swapped or quick
     // session is still training); only past days can be "missed" (AUDIT M2)
-    let done = 0, sched = 0, missed = 0; const tl = [];
+    let done = 0, missed = 0; const tl = [];
+    const goal = goalNow();
     days.forEach((d, i) => {
       const c = cycleFor(d);
-      const planned = c.type === "train" ? sessName(c.session) : null;
+      const planned = c.type === "train" && sess(c.session) ? sessName(c.session) : null;
       const dayLogs = DB.logs.filter(l => l.date === d);
-      if (planned) sched++;
       if (dayLogs.length) {
-        if (planned) done++;
+        done++;
         const what = dayLogs.map(l => sessName(l.session)).join(" + ");
         const n = new Set(dayLogs.flatMap(l => Object.keys(l.entries).filter(id => !isCardio(id)))).size;
-        const swapped = planned && !dayLogs.some(l => l.session === c.session) ? ` (planned: ${planned})` : "";
+        const swapped = planned && !dayLogs.some(l => comboParts(l.session).includes(c.session)) ? ` (scheduled: ${planned})` : "";
         tl.push(`✔  ${dn[i]} · ${what} — ${n} exercise${n === 1 ? "" : "s"}${swapped}`);
       } else if (planned) {
         if (d < today) missed++;
-        tl.push(`${d > today ? "·" : "✘"}  ${dn[i]} · ${planned} — ${d > today ? "upcoming" : d === today ? "not logged yet" : "NOT logged"}`);
-      } else tl.push(`—  ${dn[i]} · Rest`);
+        tl.push(`${d > today ? "·" : "✘"}  ${dn[i]} · ${planned} — ${d > today ? "upcoming" : d === today ? "not logged yet" : "not logged"}`);
+      } else tl.push(`—  ${dn[i]}`);
     });
-    L.push(`TRAINING — ${done}/${sched} planned sessions done`);
+    L.push(`TRAINING — ${done}/${goal} sessions (weekly goal ${goal})`);
     tl.forEach(x => L.push(x));
     L.push("");
 
@@ -1037,18 +1167,30 @@ export function initTracker() {
 
   /* ============================ PLAN (reference + settings) ============================ */
   function renderPlan() {
-    const nums = NUMS;
-    let html = `<div class="section-label">Reference</div><h1 class="h-title">The Plan</h1>
-      <p class="h-sub">Your full programme, always in your pocket.</p>
-      <button class="btn" data-act="editprog" style="margin:0 0 18px">Edit my programme</button>`;
+    const DN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const goal = goalNow();
+    const schedTxt = hasSchedule()
+      ? P.cycle.map((c, i) => c.type === "train" && sess(c.session) ? `${DN[i]} ${esc(sess(c.session).name)}` : null).filter(Boolean).join(" · ")
+      : "None — you pick on the day";
+    let html = `<div class="section-label">Your training</div><h1 class="h-title">The Plan</h1>
+      <p class="h-sub">Train what you want, when you can. Set a weekly goal and keep your usual exercises here.</p>
+      <div class="card pl-week">
+        <small>Weekly goal</small>
+        <div class="goal-row">${[1, 2, 3, 4, 5, 6, 7].map(n => `<button class="goal-chip${n === goal ? " on" : ""}" data-act="setgoal" data-n="${n}">${n}</button>`).join("")}</div>
+        <p class="pl-note">sessions a week — Home's ring counts any workout toward it.</p>
+        <div class="pl-sched"><span><small>Schedule · optional</small><b>${schedTxt}</b></span>
+          <button class="tr-switch" data-act="weekedit">Edit</button></div>
+      </div>
+      <button class="btn" data-act="editprog" style="margin:0 0 18px">Edit my workouts &amp; exercises</button>`;
 
     html += `<div class="subhead">Warm-up · every session</div><div class="card"><ul class="clean">` +
       P.warmup.map(w => `<li>${esc(w)}</li>`).join("") + `</ul></div>`;
 
-    html += `<div class="subhead">Your training sectors</div>`;
+    html += `<div class="subhead">Your workouts · usual exercises</div>`;
     SESSION_IDS.forEach(id => {
       const s = P.sessions[id];
-      html += `<div class="plan-day"><div class="ph"><span class="n">${nums[id] ? "Day " + nums[id] : "Any day"}</span>
+      const onDays = P.cycle.map((c, i) => (c.type === "train" && c.session === id ? DN[i] : null)).filter(Boolean);
+      html += `<div class="plan-day"><div class="ph"><span class="n">${onDays.length ? onDays.join(" ") : "Any day"}</span>
         <div><b>${esc(s.full)}</b><span>${esc(s.sub)}</span></div></div>` +
         s.exercises.map(e => `<div class="plan-ex"><span>${esc(e.name)}${e.isNew ? '<span class="tag-new">NEW</span>' : ""}</span>
           <span class="s">${esc(e.reps)} · ${e.sets}×</span></div>`).join("") + `</div>`;
@@ -1105,10 +1247,8 @@ export function initTracker() {
 
     // settings / data
     html += `<div class="subhead">Set-up &amp; data</div>`;
-    html += `<button class="linkbtn" data-act="weekedit">Edit your training week
-        <small>Set which sector you train each day of the week.</small></button>
-      <button class="linkbtn" data-act="loadsplit" style="border-color:var(--volt-dim,#4a5a00)">Load the muscle-group split
-        <small>Replace your programme with the 8 sector sessions (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged history is kept.</small></button>
+    html += `<button class="linkbtn" data-act="loadsplit">Reset workouts to the 8 muscle groups
+        <small>Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio with default exercises. Your logged history and weekly goal are kept.</small></button>
       <button class="linkbtn" data-act="ics">Add gym-day reminders to Calendar
         <small>Weekly alerts for each training day (.ics file for iPhone Calendar).</small></button>
       <button class="linkbtn" data-act="export">⬇︎ Back up my data
@@ -1186,6 +1326,10 @@ export function initTracker() {
       </div>`;
     }
 
+    html += `<div class="subhead lb-head">Progress photos <span class="ph-note">Auto-delete after ${PHOTO_DAYS / 7} weeks</span></div>
+      <div class="ph-grid" id="ph-mine"><button class="ph-add glass" data-act="photoadd" aria-label="Add a photo">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Add</span></button></div>
+      <input type="file" id="photo-file" accept="image/*" style="display:none">`;
     html += `<div class="subhead">Yours</div>
       <button class="linkbtn" data-act="gosquad">Your squad<small>Leaderboard, challenges, accountability</small></button>
       ${mus.url
@@ -1197,6 +1341,61 @@ export function initTracker() {
       <button class="linkbtn" data-act="logout" style="border-color:#5a3030;margin-top:12px">Log out</button>`;
 
     view().innerHTML = html;
+    loadMyPhotos();
+  }
+
+  /* ---------- photo gallery (4-week lifespan, private or squad) ---------- */
+  let MY_PHOTOS = [], SQUAD_PHOTOS = [], PENDING_PHOTO = null;
+  const LOCK = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  const PEOPLE = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="17.5" cy="9" r="2.2"/></svg>';
+  const photoSetupMsg = (e) => /relation|exist|schema|bucket|not.?found/i.test(e?.message || "")
+    ? "Photos need a one-time setup — run migrate_12.sql." : "Couldn't load photos — check your connection.";
+  async function loadMyPhotos() {
+    const grid = document.getElementById("ph-mine"); if (!grid) return;
+    try { MY_PHOTOS = await listMyPhotos(cachedUser().id); }
+    catch (e) { if (TAB === "profile") grid.insertAdjacentHTML("beforeend", `<div class="ph-msg">${photoSetupMsg(e)}</div>`); return; }
+    if (TAB !== "profile" || !document.getElementById("ph-mine")) return;
+    grid.insertAdjacentHTML("beforeend", MY_PHOTOS.map(r => `<button class="ph-tile" data-act="photoview" data-src="mine" data-id="${esc(r.id)}">
+      <img src="${esc(r.url)}" alt="" loading="lazy"><span class="ph-badge">${r.visibility === "squad" ? PEOPLE : LOCK}${daysLeft(r)}d</span></button>`).join(""));
+  }
+  async function loadSquadPhotos() {
+    const strip = document.getElementById("ph-squad"); if (!strip) return;
+    try { SQUAD_PHOTOS = await listSquadPhotos(cachedUser().id); }
+    catch (e) { strip.innerHTML = `<div class="ph-msg">${photoSetupMsg(e)}</div>`; return; }
+    if (TAB !== "squad" || !document.getElementById("ph-squad")) return;
+    strip.innerHTML = SQUAD_PHOTOS.length ? SQUAD_PHOTOS.map(r => `<button class="ph-tile sq" data-act="photoview" data-src="squad" data-id="${esc(r.id)}">
+        <img src="${esc(r.url)}" alt="" loading="lazy"><span class="ph-who">${esc(r.who?.name || r.who?.username || "Member")}</span><span class="ph-badge">${daysLeft(r)}d</span></button>`).join("")
+      : `<div class="ph-msg">Nothing shared this month. Post a progress or flex pic from your Profile and choose Squad.</div>`;
+  }
+  function openPhotoCompose(file) {
+    PENDING_PHOTO = file;
+    const url = URL.createObjectURL(file);
+    const ov = document.createElement("div"); ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box ph-compose"><div class="modal-head"><b>New photo</b><span class="mx" data-act="closemodal">✕</span></div>
+      <img class="ph-prev" src="${url}" alt="">
+      <div class="ph-opts"><small>Type</small><div class="seg" data-g="kind">
+        <button class="seg-b on" data-act="phopt" data-g="kind" data-v="progress">Progress</button><button class="seg-b" data-act="phopt" data-g="kind" data-v="flex">Flex</button></div></div>
+      <div class="ph-opts"><small>Who sees it</small><div class="seg" data-g="vis">
+        <button class="seg-b on" data-act="phopt" data-g="vis" data-v="private">Only me</button><button class="seg-b" data-act="phopt" data-g="vis" data-v="squad">My squad</button></div></div>
+      <input class="inp ph-cap" id="ph-cap" maxlength="140" placeholder="Caption (optional)">
+      <p class="sq-ihint" style="margin:8px 0 12px">Deletes itself after ${PHOTO_DAYS / 7} weeks. Location data is stripped.</p>
+      <button class="btn" data-act="photoup">Upload</button></div>`;
+    document.body.appendChild(ov);
+  }
+  function openPhotoViewer(src, id) {
+    const r = (src === "mine" ? MY_PHOTOS : SQUAD_PHOTOS).find(x => x.id === id); if (!r) return;
+    const mine = src === "mine";
+    const when = new Date(r.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const ov = document.createElement("div"); ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box ph-view"><div class="modal-head"><b>${mine ? (r.kind === "flex" ? "Flex" : "Progress") : esc(r.who?.name || r.who?.username || "Member")}</b><span class="mx" data-act="closemodal">✕</span></div>
+      <img class="ph-full" src="${esc(r.url)}" alt="">
+      ${r.caption ? `<p class="ph-capt">${esc(r.caption)}</p>` : ""}
+      <p class="sq-ihint" style="margin:6px 0 12px">${esc(when)} · ${r.kind === "flex" ? "Flex" : "Progress"} · deletes in ${daysLeft(r)} day${daysLeft(r) === 1 ? "" : "s"}</p>
+      ${mine ? `<div class="seg" style="margin-bottom:12px">
+          <button class="seg-b${r.visibility === "private" ? " on" : ""}" data-act="phvis" data-id="${esc(r.id)}" data-v="private">Only me</button>
+          <button class="seg-b${r.visibility === "squad" ? " on" : ""}" data-act="phvis" data-id="${esc(r.id)}" data-v="squad">My squad</button></div>
+        <button class="btn ghost" data-act="phdel" data-id="${esc(r.id)}" style="color:#FF8A80">Delete now</button>` : ""}</div>`;
+    document.body.appendChild(ov);
   }
   function openProfileEdit() {
     const p = PROFILE || {};
@@ -1211,18 +1410,19 @@ export function initTracker() {
 
   const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   function openWeekEditor() {
-    const opts = (sel) => `<option value="__rest" ${sel === "__rest" ? "selected" : ""}>Rest</option>` +
+    const opts = (sel) => `<option value="__rest" ${sel === "__rest" ? "selected" : ""}>No plan</option>` +
       SESSION_IDS.map(id => `<option value="${id}" ${sel === id ? "selected" : ""}>${esc(P.sessions[id].name)}</option>`).join("");
     const ov = document.createElement("div"); ov.className = "modal";
     ov.innerHTML = `<div class="modal-box"><div class="modal-head"><b>Your week</b><span class="mx" data-act="closemodal">✕</span></div>
-      <p class="sq-ihint" style="margin:0 0 12px">Set what you train each day — this is your own schedule, rest days and all.</p>
+      <p class="sq-ihint" style="margin:0 0 12px">Optional. Give a workout a usual day and Train will suggest it — you can always pick something else on the day. Leave it all on "No plan" to choose each time.</p>
       <div class="wk-edit">` +
       WEEKDAYS.map((d, i) => {
         const c = P.cycle[i];
         const sel = c && c.type === "train" ? c.session : "__rest";
         return `<label class="wk-row"><span>${d}</span><select class="sel wk-sel" data-i="${i}">${opts(sel)}</select></label>`;
       }).join("") +
-      `</div><button class="btn" data-act="saveweek" style="width:100%;margin-top:8px">Save my week</button></div>`;
+      `</div><button class="btn" data-act="saveweek" style="width:100%;margin-top:8px">Save schedule</button>
+      <button class="btn ghost" data-act="clearweek" style="width:100%;margin-top:10px">No schedule — I'll pick on the day</button></div>`;
     document.body.appendChild(ov);
   }
 
@@ -1443,6 +1643,8 @@ export function initTracker() {
       </div>
       <div class="subhead">Members</div>
       <div class="card">${memberRows || '<div class="empty">No members yet.</div>'}</div>
+      <div class="subhead lb-head">Squad gallery <span class="ph-note">Last 4 weeks</span></div>
+      <div class="ph-strip" id="ph-squad"><div class="skel skel-card" style="width:120px;height:160px"></div></div>
       <div class="subhead">Accountability · this week</div>
       ${renderAccountability(members, squadCommits, allWp, myCommit, u.id, streaks)}
       <div class="subhead lb-head">Leaderboard
@@ -1455,6 +1657,7 @@ export function initTracker() {
       <div class="subhead">Squad activity</div>
       <div class="feed">${renderFeedPosts(feed, u.id)}</div>
       <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:14px">Leave squad</button>`;
+    loadSquadPhotos();
   }
 
   function timeAgo(iso) {
@@ -1539,8 +1742,85 @@ export function initTracker() {
     const act = el.dataset.act;
     if (act === "start" || act === "pick") { ACTIVE = el.dataset.s; go("train"); }
     else if (act === "picker") { ACTIVE = null; renderPicker(); }
+    else if (act === "gotrain") { ACTIVE = null; go("train"); }
     else if (act === "quickstart") startQuick();
-    else if (act === "quickadd") openExercisePicker(ex => { if (!QUICK.exercises.some(x => x.id === ex.id)) QUICK.exercises.push(ex); renderTrain(); });
+    else if (act === "tchip") {
+      const id = el.dataset.id;
+      PICKSEL = PICKSEL.includes(id) ? PICKSEL.filter(x => x !== id) : [...PICKSEL, id];
+      el.classList.toggle("on", PICKSEL.includes(id));
+      const b = document.getElementById("tgo"); b.disabled = !PICKSEL.length; b.textContent = pickLabel();
+    }
+    else if (act === "tgo") { if (PICKSEL.length) { CHOOSE_ALL = false; renderChooser(); window.scrollTo(0, 0); } }
+    else if (act === "ckall") {
+      // keep every tick AND untick made so far
+      const state = new Map([...document.querySelectorAll("#view .ck")].map(c => [c.dataset.k, c.checked]));
+      CHOOSE_ALL = true; renderChooser();
+      document.querySelectorAll("#view .ck").forEach(c => { if (state.has(c.dataset.k)) c.checked = state.get(c.dataset.k); });
+      paintChooser();
+    }
+    else if (act === "ckcustom") {
+      openExercisePicker(ex => {
+        const card = document.querySelector("#view .ck-card");
+        if (!card) return renderChooser();
+        card.insertAdjacentHTML("afterbegin", `<label class="ck-row" data-name="${esc(ex.name.toLowerCase())}"><input type="checkbox" class="ck" data-k="${esc(ex.id)}" checked><span class="ck-box"></span>
+          <span class="ck-t"><b>${esc(ex.name)}</b><small>${esc(ex.target || "")} · ${ex.sets}×${ex.reps}</small></span></label>`);
+        paintChooser();
+      });
+    }
+    else if (act === "tstart") startChosen();
+    else if (act === "photoadd") document.getElementById("photo-file")?.click();
+    else if (act === "photoview") openPhotoViewer(el.dataset.src, el.dataset.id);
+    else if (act === "phopt") el.parentElement.querySelectorAll(".seg-b").forEach(b => b.classList.toggle("on", b === el));
+    else if (act === "photoup" && PENDING_PHOTO) {
+      const box = el.closest(".modal-box");
+      const kind = box.querySelector('[data-g="kind"].on')?.dataset.v || "progress";
+      const visibility = box.querySelector('[data-g="vis"].on')?.dataset.v || "private";
+      const caption = box.querySelector("#ph-cap").value || "";
+      el.disabled = true; el.textContent = "Uploading…";
+      uploadPhoto(cachedUser().id, PENDING_PHOTO, { kind, visibility, caption })
+        .then(() => { PENDING_PHOTO = null; el.closest(".modal")?.remove(); toast(visibility === "squad" ? "Shared with your squad" : "Saved — only you can see it"); if (TAB === "profile") renderProfile(); })
+        .catch(e => { el.disabled = false; el.textContent = "Upload"; toast(/relation|exist|bucket|not.?found|policy|row-level/i.test(e?.message || "") ? "Run migrate_12.sql first" : "Couldn't upload that photo"); });
+    }
+    else if (act === "phvis") {
+      setPhotoVisibility(el.dataset.id, el.dataset.v)
+        .then(() => {
+          const r = MY_PHOTOS.find(x => x.id === el.dataset.id); if (r) r.visibility = el.dataset.v;
+          el.parentElement.querySelectorAll(".seg-b").forEach(b => b.classList.toggle("on", b === el));
+          toast(el.dataset.v === "squad" ? "Now visible to your squad" : "Now private");
+          if (TAB === "profile") renderProfile();
+        })
+        .catch(() => toast("Couldn't change that — try again"));
+    }
+    else if (act === "phdel") {
+      const r = MY_PHOTOS.find(x => x.id === el.dataset.id); if (!r || !confirm("Delete this photo now?")) return;
+      deletePhoto(r).then(() => { el.closest(".modal")?.remove(); toast("Photo deleted"); if (TAB === "profile") renderProfile(); })
+        .catch(() => toast("Couldn't delete — try again"));
+    }
+    else if (act === "addex") openExercisePicker(ex => {
+      const s = daySession(ACTIVE);
+      if (s.exercises.some(x => x.id === ex.id)) { toast("Already in today's workout"); return; }
+      s.exercises.push(ex);
+      document.getElementById("tr-empty")?.remove();
+      document.getElementById("tr-list").insertAdjacentHTML("beforeend", exCardHtml(ex, getLog(todayStr(), ACTIVE), todayStr()));
+      document.getElementById("tp-of").textContent = s.exercises.length;
+      paintTrainProgress();
+      if (ACTIVE !== "quick") {
+        const ids = comboParts(ACTIVE).filter(k => sess(k));
+        const home = homeSessionFor(P, ids, ex.id, ex.target);
+        if (home && !sess(home).exercises.some(x => x.id === ex.id)) {
+          sess(home).exercises.push(ex); saveProgrammeQuiet();
+          toast(`Added — saved to your ${sess(home).name || sess(home).full} list`);
+        }
+      }
+    });
+    else if (act === "exrm") {
+      // today only — the usual list is edited in Plan, and logged sets are only saved on Save
+      const s = daySession(ACTIVE);
+      s.exercises = s.exercises.filter(x => x.id !== el.dataset.ex);
+      el.closest(".ex")?.remove();
+      document.getElementById("tp-of").textContent = s.exercises.length;
+      paintTrainProgress();
+    }
     else if (act === "save") { stopRest(); saveWorkout(el.dataset.s); }
     else if (act === "exhist") openExerciseHistory(el.dataset.ex);
     else if (act === "restskip") stopRest();
@@ -1660,13 +1940,23 @@ export function initTracker() {
     else if (act === "editprofile") openProfileEdit();
     else if (act === "avatarpick") document.getElementById("avatar-file")?.click();
     else if (act === "weekedit") openWeekEditor();
+    else if (act === "clearweek") {
+      document.querySelectorAll(".wk-sel").forEach(s => { s.value = "__rest"; });
+      document.querySelector('[data-act="saveweek"]')?.click();
+    }
+    else if (act === "setgoal") {
+      P.goal = Number(el.dataset.n);
+      saveProgrammeQuiet();
+      document.querySelectorAll(".goal-chip").forEach(c => c.classList.toggle("on", c === el));
+      toast(`Goal: ${P.goal} session${P.goal === 1 ? "" : "s"} a week`);
+    }
     else if (act === "saveweek") {
       const cycle = [...document.querySelectorAll(".wk-sel")]
         .map(s => s.value === "__rest" ? { type: "rest" } : { type: "train", session: s.value });
       const prog = getActiveProgramme();
       el.disabled = true;
       const u = cachedUser();
-      (u ? saveProgramme(u.id, { sessions: prog.sessions, cycle }) : Promise.resolve({ synced: true }))
+      (u ? saveProgramme(u.id, progData({ cycle })) : Promise.resolve({ synced: true }))
         .then(r => {
           toast(r.synced ? "Week saved" : "Week saved on this device — it'll sync when you're back online");
           setTimeout(() => location.reload(), 650);
@@ -1684,7 +1974,10 @@ export function initTracker() {
     else if (act === "loadsplit") {
       if (!confirm("Load the 8 muscle-group sessions? This replaces your current programme structure (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged workout history stays — only the plan layout changes.")) return;
       const u = cachedUser();
+      // fresh sectors; keep the user's goal and any schedule days that still make sense
       const fresh = defaultProgrammeData();
+      fresh.cycle = P.cycle.map(c => (c.type === "train" && fresh.sessions[c.session] ? c : { type: "rest" }));
+      if (P.goal) fresh.goal = P.goal;
       (u ? saveProgramme(u.id, fresh) : Promise.resolve({ synced: true }))
         .then(r => {
           toast(r.synced ? "New split loaded" : "Split saved on this device — it'll sync when you're back online");
@@ -1783,6 +2076,11 @@ export function initTracker() {
       uploadAvatar(cachedUser().id, file)
         .then(url => { PROFILE = { ...(PROFILE || {}), avatar_url: url }; renderHeader(); toast("Photo updated"); if (TAB === "profile") renderProfile(); })
         .catch(e => toast(/bucket|not.?found|exist|policy|denied|row-level|violates/i.test(e?.message || "") ? "Run migrate_9.sql first" : "Couldn't upload that image"));
+    }
+    else if (el.id === "photo-file" && el.files[0]) {
+      const f = el.files[0]; el.value = "";
+      if (!/^image\//.test(f.type || "image/")) { toast("Pick an image"); return; }
+      openPhotoCompose(f);
     }
     else if (el.id === "importfile" && el.files[0]) {
       const r = new FileReader();

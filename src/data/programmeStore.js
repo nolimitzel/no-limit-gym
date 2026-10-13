@@ -13,8 +13,10 @@ import { PLAN } from "../data.js";
 
 const LKEY = (uid) => "gymtracker.prog:" + uid;
 
+// new users start flexible: every sector available, no fixed weekdays, 3 sessions/week
 export function defaultProgrammeData() {
-  return JSON.parse(JSON.stringify({ sessions: PLAN.sessions, cycle: PLAN.cycle }));
+  return JSON.parse(JSON.stringify({ sessions: PLAN.sessions,
+    cycle: Array.from({ length: 7 }, () => ({ type: "rest" })), goal: 3 }));
 }
 
 function readLocal(userId) {

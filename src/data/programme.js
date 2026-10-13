@@ -21,7 +21,7 @@ export function setActiveProgramme(p) {
 export function getActiveProgramme() {
   if (!active) return PLAN;
   // user's structure + shared reference content from the default plan
-  return { ...PLAN, sessions: active.sessions, cycle: active.cycle };
+  return { ...PLAN, sessions: active.sessions, cycle: active.cycle, goal: active.goal };
 }
 
 export function exMeta(key) {
@@ -38,5 +38,5 @@ export function exMeta(key) {
 }
 export const exName = (key) => exMeta(key)?.name || key;
 export const isCardioKey = (key) => !!exMeta(key)?.cardio;
-export const sessionName = (key) =>
-  key === "quick" ? "Quick session" : (getActiveProgramme().sessions[key]?.full || key);
+export const sessionName = (key) => key === "quick" ? "Quick session"
+  : String(key).split("+").map((k) => getActiveProgramme().sessions[k]?.full || k).join(" + ");
