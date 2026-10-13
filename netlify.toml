@@ -4,3 +4,6 @@
 [build]
   command = "npm run build"
   publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"   # Vite 8 needs Node 20.19+ / 22.12+
