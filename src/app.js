@@ -369,7 +369,7 @@ export function initTracker() {
         : `No history yet — set your baseline.`;
       html += `<div class="ex" data-ex="${ex.id}">
         <div class="ex-h">
-          <div class="info"><b>${esc(ex.name)}${ex.isNew ? '<span class="tag-new">NEW</span>' : ""}</b>
+          <div class="info"><b class="ex-link" data-act="exhist" data-ex="${ex.id}">${esc(ex.name)}${ex.isNew ? '<span class="tag-new">NEW</span>' : ""}</b>
             <div class="meta">${esc(ex.target)}</div></div>
           <div class="tgt">${esc(ex.reps)} reps<small>${ex.sets} sets</small></div>
         </div>
@@ -408,7 +408,7 @@ export function initTracker() {
     const meta = ex.id === "hiit" ? P.cardio.protocol : (ex.target || "Cardio");
     return `<div class="ex cardio" data-ex="${ex.id}">
       <div class="ex-h">
-        <div class="info"><b>🔥 ${esc(ex.name)}</b><div class="meta">${esc(meta)}</div></div>
+        <div class="info"><b class="ex-link" data-act="exhist" data-ex="${ex.id}">🔥 ${esc(ex.name)}</b><div class="meta">${esc(meta)}</div></div>
         <div class="tgt">${esc(ex.reps)}<small>cardio</small></div>
       </div>
       <div class="sets">
@@ -573,7 +573,7 @@ export function initTracker() {
       .sort((a, b) => (b.pr.w - a.pr.w) || (b.pr.r - a.pr.r));
     if (prs.length) {
       prs.forEach(x => {
-        html += `<div class="pr-row"><span>${esc(exMeta(x.id).name)}</span>
+        html += `<div class="pr-row ex-link" data-act="exhist" data-ex="${x.id}"><span>${esc(exMeta(x.id).name)}</span>
           <span class="v">${esc(fmtSet(x.pr))}</span></div>`;
       });
     } else {
@@ -751,6 +751,89 @@ export function initTracker() {
     L.push("— Paste this into your coach chat to review the week —");
     return L.join("\n");
   }
+  /* ---------- per-exercise history (bottom sheet — never leaves an unsaved workout) ---------- */
+  function openExerciseHistory(id) {
+    const m = exMeta(id), cardio = isCardio(id), hist = H.exerciseSessions(DB.logs, id);
+    const pr = cardio ? null : prFor(id);
+    const ago = hist.length ? H.daysBetween(hist[0].date, todayStr()) : null;
+    const agoTxt = ago == null ? "—" : ago === 0 ? "Today" : ago === 1 ? "Yesterday" : ago + " days ago";
+    const setTxt = (s) => (cardio ? `${s.w} min · ${s.r} rds` : fmtSet(s));
+    const ov = document.createElement("div"); ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box xh">
+      <div class="modal-head"><b>${esc(m.name)}</b><span class="mx" data-act="closemodal">✕</span></div>
+      <div class="xh-sub">${esc(m.target || "")}${m.custom ? " · your exercise" : ""}</div>
+      <div class="xh-stats">
+        <div><span>${cardio ? "Sessions" : "Best set"}</span><b>${cardio ? hist.length : (pr ? esc(fmtSet(pr)) : "—")}</b></div>
+        <div><span>Last done</span><b>${esc(agoTxt)}</b></div>
+        <div><span>Times logged</span><b>${hist.length}</b></div>
+      </div>
+      ${!cardio && hist.length >= 2 ? `<div class="chart xh-chart">${liftChart(id)}</div><div class="xh-cap">${isBodyweight(id) ? "Best reps" : "Heaviest weight"} per session — rep gains at the same weight show in the list below.</div>` : ""}
+      <div class="xh-list">${hist.length ? hist.map(h => `<div class="xh-row">
+          <div class="xh-when"><b>${esc(prettyShort(h.date))}</b><small>${esc(sessName(h.session))}</small></div>
+          <div class="xh-sets">${h.sets.map(s => esc(setTxt(s))).join("<br>")}</div></div>`).join("")
+        : `<div class="empty" style="padding:18px">Not logged yet — your first session sets the baseline.</div>`}</div>
+    </div>`;
+    document.body.appendChild(ov);
+  }
+
+  /* ---------- rest timer ----------
+     Starts when a set's reps are entered; length comes from the exercise's rep
+     target (core/history restSecondsFor). Lives outside #view so it survives tab
+     changes, and counts against an absolute end time so it stays accurate when
+     the phone sleeps. Beeps (Web Audio) + vibrates where supported when done. */
+  let REST = null, REST_TICK = null, AUDIO = null;
+  function fmtClock(sec) { return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); }
+  function restEl() {
+    let el = document.getElementById("restbar");
+    if (!el) {
+      el = document.createElement("div"); el.id = "restbar"; el.className = "restbar";
+      el.innerHTML = `<div class="rb-fill"></div><div class="rb-row">
+        <span class="rb-l"></span><b class="rb-t"></b>
+        <span class="rb-acts"><button data-act="restadj" data-d="-15">−15</button>
+          <button data-act="restadj" data-d="15">+15</button><button data-act="restskip" class="rb-skip">Skip</button></span></div>`;
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+  function startRest(sec, name) {
+    REST = { endsAt: Date.now() + sec * 1000, total: sec, name, done: false };
+    try { AUDIO = AUDIO || new (window.AudioContext || window.webkitAudioContext)(); AUDIO.resume && AUDIO.resume(); } catch {}
+    clearInterval(REST_TICK); REST_TICK = setInterval(paintRest, 250); paintRest();
+  }
+  function stopRest() { clearInterval(REST_TICK); REST_TICK = null; REST = null; document.getElementById("restbar")?.remove(); }
+  function paintRest() {
+    if (!REST) return;
+    const el = restEl();
+    const left = Math.max(0, Math.ceil((REST.endsAt - Date.now()) / 1000));
+    if (left === 0 && !REST.done) { REST.done = true; restDone(); }
+    el.classList.toggle("done", REST.done);
+    el.querySelector(".rb-fill").style.width = (100 - Math.min(100, (left / REST.total) * 100)) + "%";
+    el.querySelector(".rb-l").textContent = REST.done ? "Go — next set 💪" : "Rest";
+    el.querySelector(".rb-t").textContent = REST.done ? "" : fmtClock(left);
+    el.querySelector(".rb-skip").textContent = REST.done ? "Done" : "Skip";
+  }
+  function restDone() {
+    try { navigator.vibrate && navigator.vibrate([220, 120, 220]); } catch {}
+    try {
+      if (AUDIO) [0, 0.28].forEach(t => {
+        const o = AUDIO.createOscillator(), g = AUDIO.createGain(), at = AUDIO.currentTime + t;
+        o.frequency.value = 880; o.connect(g); g.connect(AUDIO.destination);
+        g.gain.setValueAtTime(0.25, at); g.gain.exponentialRampToValueAtTime(0.001, at + 0.22);
+        o.start(at); o.stop(at + 0.23);
+      });
+    } catch {}
+    setTimeout(() => { if (REST && REST.done) stopRest(); }, 8000);
+  }
+  // entering a set's reps starts the timer (lifts only — not cardio)
+  document.addEventListener("change", (e) => {
+    const r = e.target;
+    if (!r.classList || !r.classList.contains("r") || !r.value) return;
+    const card = r.closest(".ex");
+    if (!card || card.classList.contains("cardio")) return;
+    const m = exMeta(card.dataset.ex);
+    startRest(H.restSecondsFor(m.reps), m.name);
+  });
+
   function showReport() {
     const text = weeklyReport();
     const ov = document.createElement("div");
@@ -1403,7 +1486,15 @@ export function initTracker() {
     else if (act === "picker") { ACTIVE = null; renderPicker(); }
     else if (act === "quickstart") startQuick();
     else if (act === "quickadd") openExercisePicker(ex => { if (!QUICK.exercises.some(x => x.id === ex.id)) QUICK.exercises.push(ex); renderTrain(); });
-    else if (act === "save") saveWorkout(el.dataset.s);
+    else if (act === "save") { stopRest(); saveWorkout(el.dataset.s); }
+    else if (act === "exhist") openExerciseHistory(el.dataset.ex);
+    else if (act === "restskip") stopRest();
+    else if (act === "restadj" && REST) {
+      REST.endsAt += Number(el.dataset.d) * 1000;
+      REST.total = Math.max(REST.total, Math.ceil((REST.endsAt - Date.now()) / 1000));
+      if (REST.endsAt > Date.now()) REST.done = false;
+      paintRest();
+    }
     else if (act === "addset") {
       const rows = document.querySelector(`.ex[data-ex="${el.dataset.ex}"] .rows`);
       rows.insertAdjacentHTML("beforeend", setRowHtml(el.dataset.ex, rows.children.length, null));

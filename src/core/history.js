@@ -53,6 +53,30 @@ export function allSetsFor(logs, exId) {
     }));
 }
 
+// every occurrence of an exercise, newest first — the per-exercise history page
+export function exerciseSessions(logs, exId) {
+  return logs
+    .filter((l) => l.entries && l.entries[exId] && l.entries[exId].length)
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .map((l) => ({ date: l.date, session: l.session, sets: l.entries[exId], best: bestSet(l.entries[exId]) }));
+}
+
+// whole days between two local 'YYYY-MM-DD' dates (b - a)
+export function daysBetween(a, b) {
+  const p = (s) => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((p(b) - p(a)) / 86400000);
+}
+
+/* Suggested rest between sets, from the exercise's rep target: heavy, low-rep
+   work (bottom of range ≤ 6) needs ~3 min, moderate (≤ 10) ~2 min, high-rep
+   isolation 90 s. Matches the plan's training rules. */
+export function restSecondsFor(reps) {
+  const low = parseInt(String(reps || "").match(/\d+/)?.[0] || "", 10);
+  if (!low) return 90;
+  return low <= 6 ? 180 : low <= 10 ? 120 : 90;
+}
+
 // true when every logged set for the exercise has no weight (push-ups, pull-ups…)
 export function isBodyweightHistory(logs, exId) {
   let any = false;
