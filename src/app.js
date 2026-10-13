@@ -10,8 +10,8 @@ import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
 import { getProfile, updateProfileBasics } from "./auth/profile.js";
 import { uploadAvatar } from "./data/storage.js";
-import { libExercise } from "./data/exerciseLibrary.js";
-import { getCustomExercises } from "./data/customExercises.js";
+import { libExercise, EXERCISE_LIBRARY, MUSCLE_GROUPS } from "./data/exerciseLibrary.js";
+import { getCustomExercises, addCustomExercise } from "./data/customExercises.js";
 import { getCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy } from "./data/privacy.js";
@@ -72,10 +72,11 @@ export function initTracker() {
       save();
     }
   }
+  // The 7-day cycle is authored Mon→Sun, so a day's position is simply its
+  // weekday (Mon=0 … Sun=6). Purely weekday-derived — no stored anchor to drift
+  // out of sync, so Home / Plan / Train always show the same thing for a date.
   function posForDate(s) {
-    ensureAnchor();
-    const p = (DB.settings.anchorPos + dayDiff(DB.settings.anchorDate, s)) % 7;
-    return (p + 7) % 7;
+    return (parseYmd(s).getDay() + 6) % 7;
   }
   function cycleFor(s) { return P.cycle[posForDate(s)]; }
   function setTodayAs(pos) {
@@ -333,12 +334,18 @@ export function initTracker() {
     if (!ACTIVE && c.type === "train") ACTIVE = c.session;
 
     if (!ACTIVE) return renderPicker();
+    const quick = ACTIVE === "quick";
+    if (quick && !QUICK) startQuick();
 
-    const s = P.sessions[ACTIVE];
+    const s = quick ? QUICK : P.sessions[ACTIVE];
     const existing = getLog(today, ACTIVE);
     let html = `<div class="section-label">Log workout · ${esc(shortDate(today))}</div>
-      <h1 class="h-title">${esc(s.full)}</h1><p class="h-sub">${esc(s.sub)} — tap to change day below.</p>
+      <h1 class="h-title">${esc(s.full)}</h1><p class="h-sub">${esc(s.sub)}${quick ? "" : " — tap to change day below"}.</p>
       <button class="linkbtn" data-act="picker" style="padding:11px 15px;margin-bottom:16px">↔ Switch session</button>`;
+
+    if (quick && !s.exercises.length) {
+      html += `<div class="card"><div class="empty" style="padding:18px">No exercises yet. Add what you're training today — from your library or create a new one.</div></div>`;
+    }
 
     s.exercises.forEach(ex => {
       if (ex.cardio) { html += cardioCardHtml(ex, existing); return; }
@@ -370,6 +377,9 @@ export function initTracker() {
         <div class="addset" data-act="addset" data-ex="${ex.id}">+ Add set</div>
       </div>`;
     });
+
+    if (quick) html += `<button class="linkbtn" data-act="quickadd" style="margin-top:4px">+ Add exercise
+      <small>From your library, or create a new one — it's saved for next time.</small></button>`;
 
     html += `<div style="height:70px"></div>
       <div class="savebar">
@@ -407,9 +417,67 @@ export function initTracker() {
       </div></div>`;
   }
 
+  // Shared exercise picker (library + your custom exercises + create-on-the-fly).
+  // Resolves a chosen/created exercise and hands it to onPick.
+  function openExercisePicker(onPick) {
+    const resolve = (key) => {
+      const c = getCustomExercises().find(e => e.key === key);
+      if (c) return { id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true };
+      const e = libExercise(key);
+      return e ? { id: e.key, name: e.name, target: e.group, sets: e.sets, reps: e.reps, ...(e.cardio ? { cardio: true } : {}) } : null;
+    };
+    const listHtml = (q) => MUSCLE_GROUPS.map(g => {
+      const items = [...getCustomExercises().filter(e => e.group === g), ...EXERCISE_LIBRARY.filter(e => e.group === g)]
+        .filter(e => !q || e.name.toLowerCase().includes(q) || g.toLowerCase().includes(q));
+      if (!items.length) return "";
+      return `<div class="ed-pg">${g}</div>` + items.map(e =>
+        `<button class="ed-pi" data-k="${e.key}"><span>${esc(e.name)}${e.custom ? ' <span class="tag-yours">YOURS</span>' : ""}${e.cardio ? " 🔥" : ""}</span>
+          <small>${esc(e.equipment)} · ${esc(e.sets)}×${esc(e.reps)}</small></button>`).join("");
+    }).join("");
+    const ov = document.createElement("div"); ov.className = "ed-picker";
+    ov.innerHTML = `<div class="ed-pbox"><div class="ed-ptop"><b>Add exercise</b><button class="ed-pclose">✕</button></div>
+      <input class="ed-search" placeholder="Search your library…" autocapitalize="none">
+      <div class="ed-create"><input class="ed-cin" placeholder="…or create your own" autocapitalize="words">
+        <select class="ed-cgrp">${MUSCLE_GROUPS.map(g => `<option value="${g}">${g}</option>`).join("")}</select>
+        <button class="ed-cadd">Add</button></div>
+      <div class="ed-plist">${listHtml("")}</div></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.addEventListener("click", e => { if (e.target === ov) close(); });
+    ov.querySelector(".ed-pclose").onclick = close;
+    const list = ov.querySelector(".ed-plist"), search = ov.querySelector(".ed-search");
+    const bind = () => list.querySelectorAll(".ed-pi").forEach(it => it.onclick = () => { const ex = resolve(it.dataset.k); if (ex) onPick(ex); close(); });
+    bind();
+    search.oninput = () => { list.innerHTML = listHtml(search.value.toLowerCase()); bind(); };
+    const cin = ov.querySelector(".ed-cin"), grp = ov.querySelector(".ed-cgrp");
+    const add = async () => {
+      const name = cin.value.trim(); if (!name) return;
+      try { const ex = await addCustomExercise(cachedUser()?.id, { name, group: grp.value }); onPick({ id: ex.key, name: ex.name, target: ex.group, sets: ex.sets, reps: ex.reps, custom: true }); } catch {}
+      close();
+    };
+    ov.querySelector(".ed-cadd").onclick = add;
+    cin.onkeydown = e => { if (e.key === "Enter") add(); };
+  }
+
+  let QUICK = null;   // freeform "train anything" session for today
+  function startQuick() {
+    QUICK = { full: "Quick Session", sub: "Train anything — add exercises as you go", exercises: [] };
+    const log = getLog(todayStr(), "quick");
+    if (log) Object.keys(log.entries).forEach(id => {
+      const m = exMeta(id);
+      QUICK.exercises.push({ id, name: m.name, target: m.target || "", sets: m.sets || 3, reps: m.reps || "", cardio: m.cardio });
+    });
+    ACTIVE = "quick"; go("train");
+  }
+
   function renderPicker() {
     let html = `<div class="section-label">Choose session</div>
-      <h1 class="h-title">Train</h1><p class="h-sub">Pick any session — train what you like, when you like.</p>`;
+      <h1 class="h-title">Train</h1><p class="h-sub">Train your plan, or start a quick session and pick as you go.</p>
+      <button class="pick quickpick" data-act="quickstart">
+        <span class="num">⚡</span>
+        <span class="txt"><b>Quick session</b><span>No plan? Train anything — add exercises on the fly</span></span>
+        <span class="arw">›</span></button>
+      <div class="subhead">Your sessions</div>`;
     SESSION_IDS.forEach(id => {
       const s = P.sessions[id];
       html += `<button class="pick" data-act="pick" data-s="${id}">
@@ -438,7 +506,7 @@ export function initTracker() {
     const u = cachedUser();
     if (u) pushWorkout(u.id, { date: todayStr(), session, entries }).catch(() => {});
     const sid = getCurrentSquad();
-    if (u && sid && getPrivacy().workouts) postActivity(u.id, sid, "workout", { title: P.sessions[session]?.full || session, exercises: Object.keys(entries).length });
+    if (u && sid && getPrivacy().workouts) postActivity(u.id, sid, "workout", { title: P.sessions[session]?.full || (session === "quick" ? "Quick session" : session), exercises: Object.keys(entries).length });
     toast("Workout saved 💪");
     go("progress");
   }
@@ -1308,6 +1376,8 @@ export function initTracker() {
     const act = el.dataset.act;
     if (act === "start" || act === "pick") { ACTIVE = el.dataset.s; go("train"); }
     else if (act === "picker") { ACTIVE = null; renderPicker(); }
+    else if (act === "quickstart") startQuick();
+    else if (act === "quickadd") openExercisePicker(ex => { if (!QUICK.exercises.some(x => x.id === ex.id)) QUICK.exercises.push(ex); renderTrain(); });
     else if (act === "save") saveWorkout(el.dataset.s);
     else if (act === "addset") {
       const rows = document.querySelector(`.ex[data-ex="${el.dataset.ex}"] .rows`);
