@@ -615,3 +615,93 @@ body.chrome-hidden #view{padding:0}
 .restbar.done .rb-fill{width:100% !important;background:rgba(204,255,0,.22)}
 .restbar.done .rb-l{color:var(--volt);font-size:14px}
 .xh-cap{color:var(--muted);font-size:11px;margin:-2px 0 8px;line-height:1.4}
+
+/* ================= GLASS (direction A + Apple Liquid Glass) =================
+   Glass only reads when there's colour behind it, so an ambient backdrop sits
+   under everything. Volt is reserved for ONE element per screen (Home: the ring). */
+:root{--glass:rgba(255,255,255,.055);--glass2:rgba(255,255,255,.09);--glass-brd:rgba(255,255,255,.10);
+  --glass-hi:inset 0 1px 0 rgba(255,255,255,.09);--base:#060706}
+html{background:var(--base)} body{background:transparent}
+.ambient{position:fixed;inset:0;z-index:-1;pointer-events:none;background:
+  radial-gradient(70% 38% at 12% 4%, rgba(204,255,0,.075), transparent 70%),
+  radial-gradient(60% 40% at 100% 62%, rgba(70,110,96,.16), transparent 72%),
+  radial-gradient(80% 45% at 30% 108%, rgba(120,128,110,.12), transparent 70%), var(--base)}
+.glass{background:var(--glass);backdrop-filter:blur(26px) saturate(1.7);-webkit-backdrop-filter:blur(26px) saturate(1.7);
+  border:1px solid var(--glass-brd);box-shadow:var(--glass-hi),0 14px 34px rgba(0,0,0,.38);border-radius:22px}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.glass{background:rgba(26,28,24,.94)}}
+
+/* header: frosted, no doubled date */
+.app-header{background:rgba(6,7,6,.55);backdrop-filter:blur(22px) saturate(1.6);-webkit-backdrop-filter:blur(22px) saturate(1.6);
+  border-bottom:1px solid rgba(255,255,255,.06)}
+#hdate{display:none}
+.hdr-av{background:var(--glass2);color:var(--ink);border-color:var(--glass-brd)}
+.hdr-av:active{border-color:rgba(255,255,255,.4)}
+/* tab bar: active = white, no glow — volt belongs to content */
+.tabbar button.active{color:var(--ink)}
+.tabbar button.active svg{filter:none}
+
+/* ---- Home ---- */
+.h2-greet{margin:6px 2px 16px}
+.h2-greet small{display:block;font-size:12px;color:var(--muted);letter-spacing:.02em}
+.h2-greet h1{font-family:var(--cond);font-size:30px;line-height:1.05;font-weight:700;margin:4px 0 0;letter-spacing:.005em;color:var(--ink)}
+
+.h2-hero{display:flex;align-items:center;gap:18px;padding:18px;margin-bottom:12px}
+.h2-ring{width:128px;height:128px;flex-shrink:0}
+.h2-arc{transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1)}
+@keyframes h2fill{from{stroke-dashoffset:var(--c)}}
+.h2-arc{animation:h2fill 1s cubic-bezier(.2,.8,.2,1) both}
+.h2-ring-n{font-family:var(--cond);font-size:30px;font-weight:700;fill:var(--ink);font-variant-numeric:tabular-nums}
+.h2-ring-l{font-size:10px;fill:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.h2-stats{flex:1;display:flex;flex-direction:column;gap:11px;min-width:0}
+.h2-stats div{display:flex;align-items:baseline;gap:8px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.h2-stats div:last-child{border-bottom:0;padding-bottom:0}
+.h2-stats b{font-family:var(--cond);font-size:22px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;min-width:28px}
+.h2-stats span{font-size:12px;color:var(--muted)}
+
+.h2-today{padding:18px 18px 16px;margin-bottom:12px}
+.h2-today small,.h2-prog small,.hm2-meta small{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.h2-today h2{font-family:var(--cond);font-size:34px;line-height:1;font-weight:700;margin:6px 0 6px;text-transform:uppercase;color:var(--ink)}
+.h2-today p{font-size:13px;color:var(--muted);margin:0 0 16px}
+.h2-cta{width:100%;height:50px;border-radius:16px;border:0;background:var(--ink);color:#0A0B0A;
+  font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .08s ease}
+.h2-cta:active{transform:scale(.97)}
+.h2-cta.ghost{background:var(--glass2);color:var(--ink);border:1px solid var(--glass-brd)}
+
+.h2-prog,.h2-music{width:100%;display:flex;align-items:center;gap:14px;padding:15px 16px;margin-bottom:12px;
+  text-align:left;color:var(--ink);text-decoration:none;font:inherit;transition:transform .08s ease}
+.h2-prog:active,.h2-music:active,.np-card:active{transform:scale(.98)}
+.h2-prog-l{flex:1;min-width:0;display:flex;flex-direction:column}
+.h2-prog-l b{font-size:16px;font-weight:700;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h2-prog-l > small + b{margin-top:4px}
+.h2-prog-l > b:first-child + small{text-transform:none;letter-spacing:0;font-weight:400;font-size:12.5px;margin-top:3px}
+.h2-prog-v{font-size:13px;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums}
+.h2-prog-v em{font-style:normal;color:var(--ink);font-weight:600;margin-left:6px}
+.h2-spark{flex-shrink:0}
+.hm2-art{width:44px;height:44px;border-radius:12px;flex-shrink:0;background:var(--glass2);border:1px solid var(--glass-brd);
+  display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.hm2-meta{flex:1;min-width:0}
+.hm2-meta b{display:block;font-size:15px;font-weight:700;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hm2-go{flex-shrink:0;color:var(--muted);display:flex}
+
+/* live Spotify card in glass — no green, no volt */
+.np-card.glass{padding:14px;margin:0 0 12px;background:var(--glass)}
+.np-label{color:var(--muted)}
+.np-art.ph{background:var(--glass2);color:var(--ink);font-size:0}
+.np-bar{background:rgba(255,255,255,.1)}
+.np-bar i{background:var(--ink)}
+.np-cta{display:flex;align-self:center}
+
+.h2-weekhd{display:flex;justify-content:space-between;align-items:baseline;margin:18px 4px 8px}
+.h2-weekhd span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.h2-weekhd button{font-size:13px;color:var(--ink);background:none;border:0;font-weight:600;padding:4px}
+.h2-week{display:grid;grid-template-columns:repeat(7,1fr);padding:12px 6px;margin-bottom:8px}
+.h2-day{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.h2-day span{font-size:11px;color:var(--muted);font-weight:600}
+.h2-day i{width:8px;height:8px;border-radius:50%;border:1.5px solid rgba(255,255,255,.22)}
+.h2-day.done i{background:var(--ink);border-color:var(--ink)}
+.h2-day.rest i{border-style:dashed;border-color:rgba(255,255,255,.14)}
+.h2-day b{font-size:9.5px;font-weight:600;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:uppercase;letter-spacing:.02em}
+.h2-day.today{background:var(--glass2);border-radius:12px;padding:6px 0;margin:-6px 1px}
+.h2-day.today span,.h2-day.today b{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){.h2-arc{animation:none}}
+.h2-today p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -195,42 +195,53 @@ export function initTracker() {
     const h = new Date().getHours();
     return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
   }
+  /* ---- Home (direction A + glass): one loud element — the weekly ring ---- */
+  const ICON = {
+    play: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M8 5.5v13l10-6.5z"/></svg>',
+    note: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>',
+    arrow: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+    chev: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  };
   function homeMusicCard() {
     const mus = getMusic();
-    if (mus.url) {
-      const url = safeMusicUrl(mus.url) || "#";
-      return `<a class="home-music" id="home-music" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
-        <span class="hm-art">♪</span>
-        <span class="hm-meta"><small>Your soundtrack</small><b>${esc(mus.label || "Training playlist")}</b></span>
-        <span class="hm-play">▶</span></a>`;
-    }
-    return `<button class="home-music ghost" data-act="goplan">
-      <span class="hm-art">♪</span>
-      <span class="hm-meta"><small>Music</small><b>Set your training soundtrack</b></span>
-      <span class="hm-play">+</span></button>`;
+    const url = mus.url ? (safeMusicUrl(mus.url) || "#") : null;
+    const inner = `<span class="hm2-art">${ICON.note}</span>
+      <span class="hm2-meta"><small>${url ? "Soundtrack" : "Music"}</small><b>${esc(url ? (mus.label || "Training playlist") : "Set your training soundtrack")}</b></span>
+      <span class="hm2-go">${url ? ICON.play : ICON.chev}</span>`;
+    return url
+      ? `<a class="h2-music glass" id="home-music" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${inner}</a>`
+      : `<button class="h2-music glass" data-act="goplan">${inner}</button>`;
+  }
+  function spark(values) {
+    if (values.length < 2) return "";
+    const W = 96, Hh = 32, mn = Math.min(...values), mx = Math.max(...values), rng = (mx - mn) || 1;
+    const pts = values.map((v, i) => [2 + (i / (values.length - 1)) * (W - 6), Hh - 4 - ((v - mn) / rng) * (Hh - 8)]);
+    const [lx, ly] = pts[pts.length - 1];
+    return `<svg class="h2-spark" viewBox="0 0 ${W} ${Hh}" width="${W}" height="${Hh}" aria-hidden="true">
+      <polyline points="${pts.map(p => p.map(n => n.toFixed(1)).join(",")).join(" ")}" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="#F2F3EF"/></svg>`;
   }
   function homeProgress() {
-    if (DB.body.length >= 2) {
-      const last = DB.body[DB.body.length - 1].weight;
-      const d = +(last - DB.body[0].weight).toFixed(1);
-      return `<div class="subhead">Progress snapshot</div>
-        <div class="card"><div class="snap-h"><div><div class="snap-k">Bodyweight</div>
-            <div class="snap-v">${last}<small>kg</small></div></div>
-          <span class="snap-d ${d <= 0 ? "dn" : "up"}">${d > 0 ? "+" : ""}${d} kg</span></div>
-          <div class="chart">${svgLine(DB.body.map(b => ({ label: b.date, y: b.weight })), "kg")}</div></div>`;
+    // the lift you train most — its trend is the clearest picture of progress
+    const ids = [...new Set(DB.logs.flatMap(l => Object.keys(l.entries)))].filter(id => !isCardio(id));
+    if (!ids.length) {
+      return `<button class="h2-prog glass" data-act="goprogress"><span class="h2-prog-l"><b>Your progress</b>
+        <small>Log a workout and your strength trend starts here.</small></span><span class="hm2-go">${ICON.chev}</span></button>`;
     }
-    const lifted = []; const seen = new Set();
-    DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!seen.has(id) && !isCardio(id)) { seen.add(id); lifted.push(id); } }));
-    const prs = lifted.map(id => ({ id, pr: prFor(id) })).filter(x => x.pr).sort((a, b) => (b.pr.w - a.pr.w) || (b.pr.r - a.pr.r));
-    if (prs.length) {
-      const t = prs[0];
-      return `<div class="subhead">Progress snapshot</div>
-        <button class="linkbtn" data-act="goprogress">🏆 ${esc(exMeta(t.id).name)} — ${esc(fmtSet(t.pr))}
-          <small>Your heaviest lift. Tap for all PRs & trends.</small></button>`;
-    }
-    return `<div class="subhead">Progress snapshot</div>
-      <button class="linkbtn" data-act="goprogress">📈 Log workouts to build your progress
-        <small>Your bodyweight trend and PRs will chart here.</small></button>`;
+    // show the lift that's moved most (relative gain over its last 8 sessions); else the most-trained one
+    const cand = ids.map(id => {
+      const series = allSetsFor(id).slice(-8), bw = isBodyweight(id);
+      const vals = series.map(h => bw ? Number(h.top.r) : Number(h.top.w));
+      const d = vals.length > 1 ? +(vals[vals.length - 1] - vals[0]).toFixed(1) : null;
+      return { id, series, bw, vals, d, gain: d > 0 && vals[0] > 0 ? d / vals[0] : 0, n: allSetsFor(id).length };
+    }).sort((a, b) => (b.gain - a.gain) || (b.n - a.n));
+    const { id: best, series, bw, vals, d } = cand[0];
+    const label = d > 0 ? "Biggest gain" : "Strength trend";
+    const deltaTxt = d == null ? "First session logged" : d > 0 ? `+${d} ${bw ? "reps" : "kg"}` : d < 0 ? `${d} ${bw ? "reps" : "kg"}` : "Holding steady";
+    return `<button class="h2-prog glass" data-act="exhist" data-ex="${best}">
+      <span class="h2-prog-l"><small>${label}</small><b>${esc(exMeta(best).name)}</b>
+        <span class="h2-prog-v">${esc(fmtSet(series[series.length - 1].top))} <em>${esc(deltaTxt)}</em></span></span>
+      ${spark(vals) || `<span class="hm2-go">${ICON.chev}</span>`}</button>`;
   }
   function fmtMs(ms) {
     const s = Math.max(0, Math.round(ms / 1000));
@@ -243,9 +254,9 @@ export function initTracker() {
       const host = document.getElementById("home-music");
       if (!np || !np.name || !host) return;
       const card = document.createElement(np.url ? "a" : "div");
-      card.id = "home-music"; card.className = "np-card";
+      card.id = "home-music"; card.className = "np-card glass";
       if (np.url) { card.href = np.url; card.target = "_blank"; card.rel = "noopener noreferrer"; }
-      card.innerHTML = `${np.art ? `<img class="np-art" src="${esc(np.art)}" alt="">` : `<span class="np-art ph">♪</span>`}
+      card.innerHTML = `${np.art ? `<img class="np-art" src="${esc(np.art)}" alt="">` : `<span class="np-art ph">${ICON.note}</span>`}
         <div class="np-body">
           <div class="np-label">${np.playing ? "Now playing · Spotify" : "Last played · Spotify"}</div>
           <div class="np-track">${esc(np.name)}</div>
@@ -253,7 +264,7 @@ export function initTracker() {
           <div class="np-bar"><i></i></div>
           <div class="np-time"><span class="np-cur">0:00</span><span class="np-dur">${fmtMs(np.duration_ms)}</span></div>
         </div>
-        <span class="np-cta">↗</span>`;
+        <span class="np-cta">${ICON.chev}</span>`;
       host.replaceWith(card);
 
       const bar = card.querySelector(".np-bar i");
@@ -273,58 +284,66 @@ export function initTracker() {
     const today = todayStr();
     const c = cycleFor(today);
     const name = (PROFILE?.name || (cachedUser()?.email || "Athlete").split("@")[0] || "Athlete").split(" ")[0];
+    const dateTxt = parseYmd(today).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
     let html = "";
 
     if (!isStandalone() && !DB.settings.hideInstall) {
       html += `<div class="install-hint"><span class="x" data-act="hideinstall">✕</span>
-        <b>Install me:</b> tap the Share icon in Safari, then <b>“Add to Home Screen”</b> — the app runs full-screen and works offline in the gym.</div>`;
+        <b>Install me:</b> tap Share in Safari, then <b>Add to Home Screen</b> — it runs full-screen and works offline in the gym.</div>`;
     }
 
-    html += `<div class="home-greet"><h1>${greetWord()},<br><span>${esc(name)}</span></h1>
-      <p>Discipline builds freedom.</p></div>`;
+    html += `<div class="h2-greet"><small>${esc(dateTxt)}</small><h1>${greetWord()}, ${esc(name)}</h1></div>`;
 
-    // stat row
-    const wk = DB.logs.filter(l => dayDiff(l.date, today) >= 0 && dayDiff(l.date, today) < 7).length;
+    // hero — the week's progress ring is the ONE volt element on this screen
+    const days = weekBounds();
+    const planned = days.filter(d => cycleFor(d).type === "train").length;
+    const done = days.filter(d => DB.logs.some(l => l.date === d)).length;
+    const pct = planned ? Math.min(1, done / planned) : (done ? 1 : 0);
+    const R = 52, C = 2 * Math.PI * R;
     const streak = myWeekStreak();
-    const seen = new Set();
-    DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!isCardio(id)) seen.add(id); }));
-    const prCount = [...seen].filter(id => !!prFor(id)).length;
-    html += `<div class="home-stats">
-      <div class="hs"><div class="n">${streak}<em>🔥</em></div><div class="l">Week streak</div></div>
-      <div class="hs"><div class="n">${wk}</div><div class="l">This week</div></div>
-      <div class="hs"><div class="n">${prCount}</div><div class="l">PRs</div></div></div>`;
+    const prCount = [...new Set(DB.logs.flatMap(l => Object.keys(l.entries)))].filter(id => !isCardio(id) && prFor(id)).length;
+    const toGo = Math.max(0, planned - done);
+    html += `<div class="h2-hero glass">
+      <svg class="h2-ring" viewBox="0 0 128 128" aria-label="${done} of ${planned} sessions this week">
+        <circle cx="64" cy="64" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="11"/>
+        <circle class="h2-arc" cx="64" cy="64" r="${R}" fill="none" stroke="var(--volt)" stroke-width="11" stroke-linecap="round"
+          stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - pct)).toFixed(1)}" style="--c:${C.toFixed(1)}" transform="rotate(-90 64 64)"/>
+        <text x="64" y="66" text-anchor="middle" class="h2-ring-n">${done}/${planned}</text>
+        <text x="64" y="86" text-anchor="middle" class="h2-ring-l">this week</text>
+      </svg>
+      <div class="h2-stats">
+        <div><b>${streak}</b><span>week streak</span></div>
+        <div><b>${prCount}</b><span>personal records</span></div>
+        <div><b>${planned && toGo === 0 ? "Done" : toGo}</b><span>${planned && toGo === 0 ? "week complete" : "sessions to go"}</span></div>
+      </div></div>`;
 
-    // today's workout
+    // today's workout — white (not volt) action: the ring keeps the spotlight
     if (c.type === "rest") {
-      html += `<div class="hero rest"><div class="kick">Today</div>
-        <h2>Rest Day</h2><p>Recover, walk 8–10k steps, hydrate, hit your protein. Muscle is built now.</p></div>`;
+      html += `<div class="h2-today glass"><small>Today</small><h2>Rest day</h2>
+        <p>Recover — walk, hydrate, hit your protein. Muscle is built now.</p>
+        <button class="h2-cta ghost" data-act="quickstart">Train anyway — quick session</button></div>`;
     } else {
-      const s = P.sessions[c.session];
-      const done = getLog(today, c.session);
+      const s = sess(c.session);
       const n = s.exercises.length;
-      html += `<div class="hero"><div class="kick">Today's workout</div>
-        <h2>${esc(s.name)}</h2><p>${n} exercise${n === 1 ? "" : "s"} · ${esc(s.sub)}</p>
-        <button class="btn" data-act="start" data-s="${c.session}">${done ? "Continue logging" : "Start workout"} →</button></div>`;
+      const doneToday = getLog(today, c.session);
+      html += `<div class="h2-today glass"><small>Today</small><h2>${esc(s.name)}</h2>
+        <p>${n} exercise${n === 1 ? "" : "s"}${s.sub ? " · " + esc(s.sub) : ""}</p>
+        <button class="h2-cta" data-act="start" data-s="${c.session}">${doneToday ? "Continue workout" : "Start workout"} ${ICON.arrow}</button></div>`;
     }
 
-    // music + progress
-    html += homeMusicCard();
     html += homeProgress();
+    html += homeMusicCard();
 
-    // week strip
-    html += `<div class="subhead lb-head">Your week <button class="lb-r" data-act="weekedit">✎ Edit</button></div><div class="week">`;
-    const base = posForDate(today);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(); d.setDate(d.getDate() + i);
-      const ce = P.cycle[(base + i) % 7];
-      const nm = ce.type === "rest" ? "Rest" : P.sessions[ce.session].name.replace(" + Abs", "").split(" ")[0];
-      html += `<div class="d ${i === 0 ? "today" : ""} ${ce.type === "rest" ? "rest" : ""}">
-        ${d.toLocaleDateString("en-GB", { weekday: "short" }).slice(0, 2)}<b>${esc(nm)}</b></div>`;
-    }
+    // the week at a glance
+    html += `<div class="h2-weekhd"><span>Your week</span><button data-act="weekedit">Edit</button></div><div class="h2-week glass">`;
+    days.forEach(d => {
+      const ce = cycleFor(d);
+      const logged = DB.logs.some(l => l.date === d);
+      const nm = ce.type === "rest" ? "Rest" : (sess(ce.session)?.name || "").split(" ")[0];
+      const cls = [d === today ? "today" : "", logged ? "done" : "", ce.type === "rest" ? "rest" : ""].join(" ");
+      html += `<div class="h2-day ${cls}"><span>${parseYmd(d).toLocaleDateString("en-GB", { weekday: "narrow" })}</span><i></i><b>${esc(nm)}</b></div>`;
+    });
     html += `</div>`;
-
-    html += `<button class="linkbtn" data-act="ics" style="margin-top:14px">📅 Add gym-day reminders to iPhone Calendar
-      <small>Downloads a calendar file with a weekly alert for each training day.</small></button>`;
 
     view().innerHTML = html;
     if (isSpotifyConnected()) enhanceNowPlaying();   // swap in live Spotify track
