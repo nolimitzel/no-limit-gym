@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prFor, lastSetsFor, bestSet, allSetsFor, isBodyweightHistory,
-  exerciseSessions, daysBetween, restSecondsFor } from "../src/core/history.js";
+  exerciseSessions, daysBetween, restSecondsFor, e1rm, strengthTrend } from "../src/core/history.js";
 
 // a routine that changes week to week: the incline press disappears for a week, then returns
 const logs = [
@@ -62,4 +62,28 @@ test("rest suggestion follows rep targets", () => {
   assert.equal(restSecondsFor("12–15"), 90);
   assert.equal(restSecondsFor("45–60s"), 90);
   assert.equal(restSecondsFor(undefined), 90);
+});
+
+test("strength score counts reps, not just weight", () => {
+  assert.ok(e1rm({ w: 40, r: 10 }) > e1rm({ w: 40, r: 8 }));
+  assert.equal(e1rm({ w: 100, r: 1 }), 100);
+  assert.equal(e1rm({ w: 0, r: 20 }), 20);                 // bodyweight → reps
+  assert.ok(e1rm({ w: 30, r: 12 }) > e1rm({ w: 32.5, r: 5 }));
+});
+
+test("strength trend: same weight, more reps reads as progress (was 'holding steady')", () => {
+  const t = strengthTrend([
+    { date: "2026-10-01", entries: { "incline-db-press": [{ w: 40, r: 8 }, { w: 40, r: 7 }] } },
+    { date: "2026-10-08", entries: { "incline-db-press": [{ w: 40, r: 10 }] } },
+  ], "incline-db-press");
+  assert.equal(t.values.length, 2);
+  assert.ok(t.pct > 0);
+  assert.deepEqual(t.latest, { w: 40, r: 10 });
+});
+
+test("strength trend: one session has no trend yet; bodyweight trends by reps", () => {
+  assert.equal(strengthTrend(logs, "cable-crossover").pct, null);
+  const pu = strengthTrend(logs, "push-ups");
+  assert.equal(pu.bodyweight, true);
+  assert.equal(pu.pct, 25);                                // 20 → 25 reps
 });

@@ -86,3 +86,37 @@ export function isBodyweightHistory(logs, exId) {
   }
   return any;
 }
+
+/* Strength score for one set: an estimated one-rep max (Epley: w × (1 + r/30)),
+   so 40 kg × 10 scores higher than 40 kg × 8 — adding reps IS getting stronger.
+   Bodyweight lifts (no load) score by reps. */
+export function e1rm(set, bodyweight = false) {
+  const w = num(set && set.w), r = num(set && set.r);
+  if (bodyweight || w <= 0) return r;
+  if (r <= 1) return w;
+  return Math.round(w * (1 + r / 30) * 10) / 10;
+}
+
+/* How an exercise's strength has moved over its last `n` sessions: each
+   session's best estimated max, oldest → newest, and the % change across them. */
+export function strengthTrend(logs, exId, n = 8) {
+  const bw = isBodyweightHistory(logs, exId);
+  const sessions = logs
+    .filter((l) => l.entries && l.entries[exId] && l.entries[exId].length)
+    .slice().sort((a, b) => (a.date < b.date ? -1 : 1))
+    .map((l) => {
+      const sets = l.entries[exId];
+      const best = sets.reduce((m, s) => (e1rm(s, bw) > e1rm(m, bw) ? s : m), sets[0]);
+      return { date: l.date, best, score: e1rm(best, bw) };
+    })
+    .filter((s) => s.score > 0)
+    .slice(-n);
+  const first = sessions[0]?.score ?? 0, last = sessions[sessions.length - 1]?.score ?? 0;
+  return {
+    bodyweight: bw,
+    sessions,
+    values: sessions.map((s) => s.score),
+    latest: sessions[sessions.length - 1]?.best || null,
+    pct: sessions.length > 1 && first > 0 ? Math.round(((last - first) / first) * 1000) / 10 : null,
+  };
+}

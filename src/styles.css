@@ -917,3 +917,20 @@ select.sel{background-color:var(--glass)}
 .wd .pr-row{text-align:left}
 .wd .h2-cta{margin-top:6px}
 @media (prefers-reduced-motion:reduce){.wd-tick{animation:none}}
+
+/* ---- Home: getting stronger ---- */
+.gs{padding:14px 14px 6px;margin-bottom:12px}
+.gs-h{display:flex;align-items:center;justify-content:space-between;padding:0 2px}
+.gs-h small{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.gs-h button{font-size:12.5px;font-weight:600;color:var(--ink);padding:4px 2px}
+.gs-note{font-size:12px;color:var(--muted);margin:3px 2px 6px;line-height:1.4}
+.gs-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 2px;color:var(--ink);
+  border-top:1px solid rgba(255,255,255,.06)}
+.gs-row:active{opacity:.7}
+.gs-l{flex:1;min-width:0;display:flex;flex-direction:column}
+.gs-l b{font-size:14.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gs-l small{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.gs-row .h2-spark{width:64px;height:26px;flex-shrink:0}
+.gs-d{font-style:normal;font-size:13px;font-weight:700;min-width:50px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.gs-d.up{color:var(--ink)}
+.gs-d.down{color:#FF8A80}

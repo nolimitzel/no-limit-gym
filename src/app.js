@@ -227,27 +227,32 @@ export function initTracker() {
       <polyline points="${pts.map(p => p.map(n => n.toFixed(1)).join(",")).join(" ")}" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
       <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="#F2F3EF"/></svg>`;
   }
+  /* "Getting stronger": your top 3 improving lifts. Strength = estimated one-rep
+     max (weight AND reps count), compared across each lift's last 8 sessions. */
   function homeProgress() {
-    // the lift you train most — its trend is the clearest picture of progress
     const ids = [...new Set(DB.logs.flatMap(l => Object.keys(l.entries)))].filter(id => !isCardio(id));
-    if (!ids.length) {
-      return `<button class="h2-prog glass" data-act="goprogress"><span class="h2-prog-l"><b>Your progress</b>
-        <small>Log a workout and your strength trend starts here.</small></span><span class="hm2-go">${ICON.chev}</span></button>`;
+    const trends = ids.map(id => ({ id, n: allSetsFor(id).length, ...H.strengthTrend(DB.logs, id, 8) }))
+      .filter(t => t.latest);
+    if (!trends.length) {
+      return `<button class="h2-prog glass" data-act="gotrain"><span class="h2-prog-l"><small>Getting stronger</small><b>Your strength trend starts here</b>
+        <span class="h2-prog-v">Log a workout — every lift is tracked automatically.</span></span><span class="hm2-go">${ICON.chev}</span></button>`;
     }
-    // show the lift that's moved most (relative gain over its last 8 sessions); else the most-trained one
-    const cand = ids.map(id => {
-      const series = allSetsFor(id).slice(-8), bw = isBodyweight(id);
-      const vals = series.map(h => bw ? Number(h.top.r) : Number(h.top.w));
-      const d = vals.length > 1 ? +(vals[vals.length - 1] - vals[0]).toFixed(1) : null;
-      return { id, series, bw, vals, d, gain: d > 0 && vals[0] > 0 ? d / vals[0] : 0, n: allSetsFor(id).length };
-    }).sort((a, b) => (b.gain - a.gain) || (b.n - a.n));
-    const { id: best, series, bw, vals, d } = cand[0];
-    const label = d > 0 ? "Biggest gain" : "Strength trend";
-    const deltaTxt = d == null ? "First session logged" : d > 0 ? `+${d} ${bw ? "reps" : "kg"}` : d < 0 ? `${d} ${bw ? "reps" : "kg"}` : "Holding steady";
-    return `<button class="h2-prog glass" data-act="exhist" data-ex="${best}">
-      <span class="h2-prog-l"><small>${label}</small><b>${esc(exMeta(best).name)}</b>
-        <span class="h2-prog-v">${esc(fmtSet(series[series.length - 1].top))} <em>${esc(deltaTxt)}</em></span></span>
-      ${spark(vals) || `<span class="hm2-go">${ICON.chev}</span>`}</button>`;
+    const rising = trends.filter(t => t.pct > 0).sort((a, b) => b.pct - a.pct);
+    const pick = (rising.length ? rising : trends.sort((a, b) => b.n - a.n)).slice(0, 3);
+    const rows = pick.map(t => {
+      const pc = t.pct == null ? null : Math.round(t.pct);
+      const delta = pc == null ? "1st session" : pc > 0 ? `+${pc}%` : pc < 0 ? `${pc}%` : "Steady";
+      const cls = t.pct > 0 ? "up" : t.pct < 0 ? "down" : "";
+      return `<button class="gs-row" data-act="exhist" data-ex="${esc(t.id)}">
+        <span class="gs-l"><b>${esc(exMeta(t.id)?.name || t.id)}</b><small>Latest best ${esc(fmtSet(t.latest))}</small></span>
+        ${spark(t.values)}<em class="gs-d ${cls}">${delta}</em></button>`;
+    }).join("");
+    const head = rising.length ? "Getting stronger" : "Your strength";
+    const note = rising.length
+      ? "Estimated max over your last 8 sessions — weight and reps both count."
+      : "No lift has moved up yet — add a rep or a little weight and it shows here.";
+    return `<div class="gs glass"><div class="gs-h"><small>${head}</small><button data-act="goprogress">All lifts</button></div>
+      <p class="gs-note">${note}</p>${rows}</div>`;
   }
   function fmtMs(ms) {
     const s = Math.max(0, Math.round(ms / 1000));
