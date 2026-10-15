@@ -172,6 +172,7 @@ export function initTracker() {
   function go(tab, opts) {
     if (typeof clearNP === "function") clearNP();   // stop any now-playing ticker
     if (typeof flushAutosave === "function") flushAutosave();   // never lose typed sets on navigation
+    document.getElementById("axs")?.remove(); document.body.classList.remove("sheet-open", "kb-open");
     TAB = tab; ACTIVE = (opts && opts.session) || ACTIVE;
     document.querySelectorAll(".tabbar button").forEach(b =>
       b.classList.toggle("active", b.dataset.tab === tab));
@@ -388,19 +389,20 @@ export function initTracker() {
       ${finished ? `<p class="h-sub">Workout finished — any change you make still saves.</p>` : ""}
       <div class="tp glass" id="tprog"><div class="tp-row"><span><b id="tp-n">0</b> of <span id="tp-of">${s.exercises.length}</span> exercises</span>
         <span id="tp-s">0 sets logged</span></div><div class="tp-bar"><i id="tp-bar"></i></div>
-        <div class="tp-save" id="tp-save">${existing ? "Saved" : "Saves as you type"}</div></div>`;
+        <div class="tp-foot"><span class="tp-save" id="tp-save">${existing ? "Saved" : "Saves as you type"}</span>
+          <button class="tp-add" data-act="axopen">+ Add exercise</button></div></div>`;
     html += `<div id="tr-list">${s.exercises.map(ex => exCardHtml(ex, existing, today)).join("")}</div>`;
-    html += `<div class="ax glass" id="ax">
-        <div class="ax-in"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>
-          <input id="ax-q" placeholder="${s.exercises.length ? "Add another exercise…" : "Search the exercise you're doing…"}" autocapitalize="none" autocomplete="off" enterkeyhint="search"></div>
-        <div class="ax-res" id="ax-res"></div></div>`;
+    html += s.exercises.length ? "" : `<button class="ax-empty glass" data-act="axopen">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <b>Add your first exercise</b><small>Search the library, or add your own</small></button>`;
+    html += `<button class="linkbtn ax-more" data-act="axopen"${s.exercises.length ? "" : ' style="display:none"'}>+ Add exercise</button>`;
     html += `<div style="height:70px"></div>
       <div class="savebar">
         <button class="btn" data-act="finish">${finished ? "Done — back to Home" : "Finish workout"}</button>
       </div>`;
     view().innerHTML = html;
     paintTrainProgress();
-    if (!s.exercises.length) axShow("");
+    if (!s.exercises.length) openAddSheet();
   }
 
   function exCardHtml(ex, existing, today) {
@@ -468,10 +470,20 @@ export function initTracker() {
     if (e.target.closest && e.target.closest("#view .set-row")) { paintTrainProgress(); scheduleAutosave(); }
     if (e.target.id === "ax-q") axShow(e.target.value);
   });
-  document.addEventListener("focusin", (e) => { if (e.target.id === "ax-q") axShow(e.target.value); });
-  document.addEventListener("focusout", (e) => {
-    if (e.target.id === "ax-q") setTimeout(() => { if (document.activeElement?.id !== "ax-q") document.getElementById("ax-res")?.classList.remove("open"); }, 220);
-  });
+  /* Keyboard handling (web app on iPhone): while you type, hide the floating tab
+     bar / Finish button / rest bar so nothing jumps up over your inputs, and keep
+     sheets sized to the part of the screen above the keyboard. */
+  const isTyping = (el) => el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !/^(checkbox|radio|file|button|submit)$/.test(el.type)));
+  document.addEventListener("focusin", (e) => { if (isTyping(e.target)) document.body.classList.add("kb-open"); });
+  document.addEventListener("focusout", () => setTimeout(() => { if (!isTyping(document.activeElement)) document.body.classList.remove("kb-open"); }, 120));
+  if (window.visualViewport) {
+    const fit = () => {
+      const vv = window.visualViewport;
+      document.documentElement.style.setProperty("--vvh", vv.height + "px");
+      document.documentElement.style.setProperty("--vvt", vv.offsetTop + "px");
+    };
+    visualViewport.addEventListener("resize", fit); visualViewport.addEventListener("scroll", fit); fit();
+  }
 
   function setRowHtml(exId, i, pv, ghost) {
     const phW = ghost ? ghost.w : "–", phR = ghost ? ghost.r : "–";
@@ -669,35 +681,73 @@ export function initTracker() {
     }
     return list.slice(0, q ? 20 : 14);
   }
+  /* Add-exercise sheet: full screen, search pinned to the top so the keyboard can
+     never push it away. Sized to the visible viewport (above the keyboard). If
+     nothing matches, "add it as a new exercise" sits directly under the search. */
+  let AX_GROUP = null;
+  function openAddSheet() {
+    closeAddSheet();
+    const groups = groupsOf(ACTIVE);
+    AX_GROUP = groups[0] || null;
+    const ov = document.createElement("div"); ov.className = "axs"; ov.id = "axs";
+    ov.innerHTML = `<div class="axs-top">
+        <div class="ax-in"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>
+          <input id="ax-q" type="search" placeholder="Search exercises…" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search"></div>
+        <button class="axs-x" data-act="axclose">Close</button></div>
+      <div class="axs-body" id="axs-body"><div id="axs-new"></div><div id="ax-res"></div></div>`;
+    document.body.appendChild(ov);
+    document.body.classList.add("sheet-open");
+    axShow("");
+    document.getElementById("ax-q")?.focus();   // in the same tap, so iPhone opens the keyboard
+  }
+  function closeAddSheet() {
+    document.getElementById("axs")?.remove();
+    document.body.classList.remove("sheet-open");
+  }
   function axShow(q) {
     const box = document.getElementById("ax-res"); if (!box) return;
-    const rows = axResults(q.trim());
+    const query = q.trim();
+    const rows = axResults(query);
     const groups = groupsOf(ACTIVE);
-    const head = !q.trim() ? `<div class="ax-h">${groups.length ? esc(groups.join(" + ")) : "Exercises"} · your recent first</div>` : "";
+    const exact = rows.some(e => e.name.toLowerCase() === query.toLowerCase());
+    const nw = document.getElementById("axs-new");
+    if (query && !exact) {
+      const order = [...groups, ...MUSCLE_GROUPS.filter(g => !groups.includes(g))];
+      if (!AX_GROUP || !order.includes(AX_GROUP)) AX_GROUP = order[0];
+      nw.innerHTML = `<div class="axn glass"><small>${rows.length ? "Not the one?" : "Not in the library"}</small>
+        <b>Add “${esc(query)}” as a new exercise</b>
+        <div class="axn-g">${order.map(g => `<button class="axn-c${g === AX_GROUP ? " on" : ""}" data-act="axgrp" data-g="${esc(g)}">${esc(g)}</button>`).join("")}</div>
+        <button class="btn" data-act="axcreate" data-q="${esc(query)}">Add “${esc(query)}”</button></div>`;
+    } else nw.innerHTML = "";
+    const head = !query ? `<div class="ax-h">${groups.length ? esc(groups.join(" + ")) : "Exercises"} · your recent first</div>`
+      : rows.length ? `<div class="ax-h">In the library</div>` : "";
     box.innerHTML = head + rows.map(e => {
       const last = lastSetsFor(e.key, todayStr());
       const lastTxt = last ? ` · last ${last.sets.map(x => `${x.w}×${x.r}`).slice(0, 2).join(", ")}` : "";
       return `<button class="ax-row" data-act="axadd" data-k="${esc(e.key)}"><span><b>${esc(e.name)}</b>
         <small>${esc(e.group)} · ${esc(e.equipment || "")}${esc(lastTxt)}</small></span><i>+</i></button>`;
-    }).join("") + (q.trim() && !rows.some(e => e.name.toLowerCase() === q.trim().toLowerCase())
-      ? `<button class="ax-row ax-new" data-act="axcreate" data-q="${esc(q.trim())}"><span><b>Create “${esc(q.trim())}”</b>
-          <small>Saved to your library${groups.length ? " under " + esc(groups[0]) : ""}</small></span><i>+</i></button>` : "")
-      + (!rows.length && !q.trim() ? `<div class="ax-h">Type to search all ${EXERCISE_LIBRARY.length}+ exercises</div>` : "");
-    box.classList.add("open");
+    }).join("");
+    document.getElementById("axs-body").scrollTop = 0;
   }
   function addToWorkout(ex) {
     const s = daySession(ACTIVE);
-    if (s.exercises.some(x => x.id === ex.id)) return;
-    s.exercises.push(ex);
-    persistDay();
-    const today = todayStr();
-    document.getElementById("tr-list").insertAdjacentHTML("beforeend", exCardHtml(ex, getLog(today, ACTIVE), today));
-    document.getElementById("tp-of").textContent = s.exercises.length;
-    const q = document.getElementById("ax-q"); q.value = ""; q.placeholder = "Add another exercise…";
-    document.getElementById("ax-res").classList.remove("open");
+    const dupe = s.exercises.some(x => x.id === ex.id);
+    if (!dupe) {
+      s.exercises.push(ex);
+      persistDay();
+      const today = todayStr();
+      document.getElementById("tr-list").insertAdjacentHTML("beforeend", exCardHtml(ex, getLog(today, ACTIVE), today));
+      document.getElementById("tp-of").textContent = s.exercises.length;
+    }
+    closeAddSheet();
+    document.getElementById("tr-empty")?.remove();
+    document.querySelector("#view .ax-empty")?.remove();
+    const more = document.querySelector("#view .ax-more"); if (more) more.style.display = "";
     const card = document.querySelector(`#tr-list .ex[data-ex="${CSS.escape(ex.id)}"]`);
-    card?.scrollIntoView({ behavior: "smooth", block: "center" });
-    setTimeout(() => card?.querySelector("input")?.focus({ preventScroll: true }), 350);
+    // focus in the same tap so the keyboard opens straight onto the weight box
+    const first = [...(card?.querySelectorAll(".set-row input") || [])].find(i => !i.value);
+    first?.focus({ preventScroll: true });
+    card?.scrollIntoView({ behavior: "smooth", block: "start" });
     paintTrainProgress();
   }
 
@@ -1853,13 +1903,16 @@ export function initTracker() {
       const b = document.getElementById("tgo"); b.disabled = !PICKSEL.length; b.textContent = pickLabel();
     }
     else if (act === "tgo") { if (startPicked() && !getLog(todayStr(), ACTIVE)) maybeAutoplay(); }
+    else if (act === "axopen") openAddSheet();
+    else if (act === "axclose") closeAddSheet();
+    else if (act === "axgrp") { AX_GROUP = el.dataset.g; el.parentElement.querySelectorAll(".axn-c").forEach(c => c.classList.toggle("on", c === el)); document.getElementById("ax-q")?.focus(); }
     else if (act === "axadd") { const ex = toEx(el.dataset.k); if (ex) addToWorkout(ex); }
     else if (act === "axcreate") {
-      const groups = groupsOf(ACTIVE);
-      if (!groups.length) { openExercisePicker(ex => addToWorkout(ex)); return; }
-      addCustomExercise(cachedUser()?.id, { name: el.dataset.q, group: groups[0] })
-        .then(c => addToWorkout({ id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(c.cardio ? { cardio: true } : {}) }))
-        .catch(() => toast("Couldn't create that exercise"));
+      el.disabled = true; el.textContent = "Adding…";
+      const nice = el.dataset.q.replace(/\s+/g, " ").replace(/(^|\s)\S/g, m => m.toUpperCase());
+      addCustomExercise(cachedUser()?.id, { name: nice, group: AX_GROUP || "Chest" })
+        .then(c => { addToWorkout({ id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(c.cardio || c.group === "Cardio" ? { cardio: true } : {}) }); toast(`Added “${c.name}” — it's in your library now`); })
+        .catch(() => { el.disabled = false; el.textContent = "Try again"; toast("Couldn't add that exercise"); });
     }
     else if (act === "finish") finishWorkout();
     else if (act === "gohome") go("today");

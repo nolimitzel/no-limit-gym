@@ -934,3 +934,38 @@ select.sel{background-color:var(--glass)}
 .gs-d{font-style:normal;font-size:13px;font-weight:700;min-width:50px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
 .gs-d.up{color:var(--ink)}
 .gs-d.down{color:#FF8A80}
+
+/* ---- add-exercise sheet (search pinned at top, sized above the keyboard) ---- */
+.axs{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100dvh);z-index:90;display:flex;flex-direction:column;
+  background:rgba(8,9,8,.94);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);
+  padding-top:calc(env(safe-area-inset-top,0px) + 10px);animation:axsin .18s ease-out both}
+@keyframes axsin{from{opacity:0;transform:translateY(12px)}}
+.axs-top{display:flex;align-items:center;gap:10px;padding:0 14px 10px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.axs-top .ax-in{flex:1;background:rgba(255,255,255,.07);border:1px solid var(--glass-brd);border-radius:14px}
+.axs-top .ax-in input{font-size:16px}
+.axs-top .ax-in input::-webkit-search-cancel-button{-webkit-appearance:none}
+.axs-x{font-size:15px;font-weight:600;color:var(--ink);padding:8px 2px;flex-shrink:0}
+.axs-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:6px 10px calc(16px + env(safe-area-inset-bottom,0px))}
+.axn{padding:14px;margin:6px 4px 8px;border-radius:18px}
+.axn small{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.axn b{display:block;font-size:15.5px;margin:4px 0 10px}
+.axn-g{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -2px 12px;padding:0 2px}
+.axn-g::-webkit-scrollbar{display:none}
+.axn-c{flex-shrink:0;font-size:13px;font-weight:600;color:var(--muted);padding:7px 12px;border-radius:99px;border:1px solid var(--glass-brd);background:rgba(255,255,255,.04)}
+.axn-c.on{background:var(--ink);color:#0A0B0A;border-color:var(--ink)}
+.axn .btn{margin:0;padding:13px}
+body.sheet-open{overflow:hidden}
+body.sheet-open .tabbar,body.sheet-open .savebar,body.sheet-open .restbar{display:none}
+
+/* while typing, nothing floats up over the inputs */
+body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .toast{display:none}
+
+/* workout screen add buttons */
+.tp-foot{display:flex;align-items:center;justify-content:space-between;margin-top:7px}
+.tp-foot .tp-save{margin-top:0}
+.tp-add{font-size:12.5px;font-weight:700;color:#0A0B0A;background:var(--ink);padding:6px 12px;border-radius:99px}
+.tp-add:active{transform:scale(.95)}
+.ax-empty{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;border-radius:22px;color:var(--ink);margin-bottom:12px}
+.ax-empty b{font-size:16px}
+.ax-empty small{font-size:12.5px;color:var(--muted)}
+.ax-more{text-align:center;font-weight:600}
