@@ -878,3 +878,42 @@ select.sel{background-color:var(--glass)}
 .ap-row b{font-size:14px}
 .ap-row small{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.4}
 .ap-row .toggle{flex-shrink:0}
+
+/* ---- header settings button ---- */
+.hdr-gear{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink);
+  background:var(--glass2);border:1px solid var(--glass-brd)}
+.hdr-gear:active{transform:scale(.92)}
+
+/* ---- Train: search-to-add ---- */
+.ax{padding:6px;border-radius:18px;margin:4px 0 10px}
+.ax-in{display:flex;align-items:center;gap:10px;padding:0 10px;color:var(--muted)}
+.ax-in input{flex:1;min-width:0;background:none;border:0;outline:none;color:var(--ink);font-size:16px;padding:12px 0}
+.ax-res{display:none;max-height:52vh;overflow-y:auto;border-top:1px solid rgba(255,255,255,.06);margin-top:2px}
+.ax-res.open{display:block}
+.ax-h{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600;padding:10px 10px 4px}
+.ax-row{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;padding:10px;border-radius:12px;color:var(--ink)}
+.ax-row:active{background:rgba(255,255,255,.07)}
+.ax-row span{display:flex;flex-direction:column;min-width:0}
+.ax-row b{font-size:14.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ax-row small{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ax-row i{font-style:normal;font-size:20px;color:var(--muted);flex-shrink:0;width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06)}
+.ax-new b{color:var(--ink)}
+.tp-save{font-size:10.5px;color:var(--muted);margin-top:7px;letter-spacing:.02em}
+.h2-today.done h2{color:var(--ink)}
+
+/* ---- workout done ---- */
+.wd{position:relative;text-align:center;padding-top:18px}
+.wd-confetti{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:60}
+.wd-tick{width:78px;height:78px;margin:8px auto 14px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--brand);color:#0A0B0A;box-shadow:0 0 0 10px rgba(204,255,0,.10),0 14px 40px rgba(204,255,0,.25);animation:wdpop .55s cubic-bezier(.2,1.4,.4,1) both}
+@keyframes wdpop{from{transform:scale(.4);opacity:0}}
+.wd-h{font-family:var(--cond);font-size:40px;text-transform:uppercase;line-height:1;margin:0 0 8px}
+.wd-sub{font-size:14px;color:var(--muted);margin:0 auto 18px;max-width:320px;line-height:1.45}
+.wd-stats{display:flex;justify-content:space-around;padding:16px 8px;margin-bottom:16px;border-radius:20px}
+.wd-stats div{display:flex;flex-direction:column;gap:2px}
+.wd-stats b{font-family:var(--cond);font-size:26px;font-variant-numeric:tabular-nums}
+.wd-stats span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.wd .pr-row{text-align:left}
+.wd .h2-cta{margin-top:6px}
+@media (prefers-reduced-motion:reduce){.wd-tick{animation:none}}

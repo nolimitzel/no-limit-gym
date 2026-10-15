@@ -6,9 +6,8 @@ import { pushWorkout, pushBodyweight, pushMacros, deleteAllHistory } from "./dat
 import { getActiveProgramme, exMeta as resolveExercise } from "./data/programme.js";
 import { esc } from "./ui/safeRender.js";
 import * as H from "./core/history.js";
-import { weekdayPos, isSessionReferenced, weeklyGoal, comboParts, comboKey, homeSessionFor } from "./core/programme.js";
+import { weekdayPos, isSessionReferenced, weeklyGoal, comboParts, comboKey } from "./core/programme.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
-import { openEditor } from "./programme/editor.js";
 import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
 import { getProfile, updateProfileBasics } from "./auth/profile.js";
@@ -70,7 +69,7 @@ export function initTracker() {
   const posForDate = weekdayPos;
   function cycleFor(s) { return P.cycle[posForDate(s)] || { type: "rest" }; }
   const sess = (id) => P.sessions[id] || null;
-  const oneName = (k) => sess(k)?.full || sess(k)?.name || (DB.names && DB.names["@" + k]) || k;
+  const oneName = (k) => MUSCLE_GROUPS.find(g => g.toLowerCase() === k) || sess(k)?.full || sess(k)?.name || (DB.names && DB.names["@" + k]) || k;
   const sessName = (id) => (id === "quick" ? "Quick session"
     : (!comboParts(id).every(k => sess(k)) && DB.names && DB.names["@" + id]) || comboParts(id).map(oneName).join(" + "));
   // the programme as stored (sessions + optional schedule + weekly goal)
@@ -172,10 +171,11 @@ export function initTracker() {
   let TAB = "today", ACTIVE = null;
   function go(tab, opts) {
     if (typeof clearNP === "function") clearNP();   // stop any now-playing ticker
+    if (typeof flushAutosave === "function") flushAutosave();   // never lose typed sets on navigation
     TAB = tab; ACTIVE = (opts && opts.session) || ACTIVE;
     document.querySelectorAll(".tabbar button").forEach(b =>
       b.classList.toggle("active", b.dataset.tab === tab));
-    ({ today: renderToday, train: renderTrain, progress: renderProgress, log: renderLog, plan: renderPlan, squad: renderSquad, profile: renderProfile }[tab])();
+    ({ today: renderToday, train: renderTrain, progress: renderProgress, log: renderLog, plan: renderPlan, squad: renderSquad, profile: renderProfile, settings: renderSettings }[tab])();
     const v = view(); v.classList.remove("viewin"); void v.offsetWidth; v.classList.add("viewin"); // restart fade-in
     window.scrollTo(0, 0);
   }
@@ -325,13 +325,18 @@ export function initTracker() {
 
     // today's workout — white (not volt) action: the ring keeps the spotlight
     const todays = DB.logs.filter(l => l.date === today);
-    if (todays.length) {
-      const l = todays[todays.length - 1];
-      const n = Object.keys(l.entries).length;
-      html += `<div class="h2-today glass"><small>Today · logged</small><h2>${esc(sessName(l.session))}</h2>
-        <p>${n} exercise${n === 1 ? "" : "s"} done${todays.length > 1 ? ` · +${todays.length - 1} more session${todays.length > 2 ? "s" : ""}` : ""}</p>
-        <button class="h2-cta" data-act="pick" data-s="${esc(l.session)}">Continue workout ${ICON.arrow}</button>
-        <button class="h2-cta ghost" data-act="gotrain" style="margin-top:10px">Train something else</button></div>`;
+    const open = todays.find(l => l.done === false);          // started, not finished
+    if (open) {
+      const n = Object.keys(open.entries).length;
+      html += `<div class="h2-today glass"><small>Today · in progress</small><h2>${esc(sessName(open.session))}</h2>
+        <p>${n} exercise${n === 1 ? "" : "s"} so far — everything's saved.</p>
+        <button class="h2-cta" data-act="pick" data-s="${esc(open.session)}">Continue workout ${ICON.arrow}</button></div>`;
+    } else if (todays.length) {
+      const n = new Set(todays.flatMap(l => Object.keys(l.entries))).size;
+      const sets = todays.reduce((t, l) => t + Object.values(l.entries).reduce((a, x) => a + x.length, 0), 0);
+      html += `<div class="h2-today glass done"><small>Today · done</small><h2>${esc(todays.map(l => sessName(l.session)).join(" + "))}</h2>
+        <p>${n} exercise${n === 1 ? "" : "s"} · ${sets} sets. Good work — recover well.</p>
+        <button class="h2-cta ghost" data-act="gotrain">Train something else</button></div>`;
     } else if (c.type === "train" && sess(c.session)) {
       const s = sess(c.session);
       const n = s.exercises.length;
@@ -369,28 +374,28 @@ export function initTracker() {
   function renderTrain() {
     const today = todayStr();
     if (!ACTIVE) return renderPicker();
-    const quick = ACTIVE === "quick";
     const s = daySession(ACTIVE);
     const existing = getLog(today, ACTIVE);
-    let html = `<div class="tr-top"><div class="section-label">Log workout · ${esc(shortDate(today))}</div>
+    const finished = existing && existing.done !== false;
+    let html = `<div class="tr-top"><div class="section-label">${finished ? "Finished" : "Training"} · ${esc(shortDate(today))}</div>
         <button class="tr-switch" data-act="picker">Switch</button></div>
-      <h1 class="h-title">${esc(s.full)}</h1>${s.sub ? `<p class="h-sub">${esc(s.sub)}</p>` : ""}
+      <h1 class="h-title">${esc(sessName(ACTIVE))}</h1>
+      ${finished ? `<p class="h-sub">Workout finished — any change you make still saves.</p>` : ""}
       <div class="tp glass" id="tprog"><div class="tp-row"><span><b id="tp-n">0</b> of <span id="tp-of">${s.exercises.length}</span> exercises</span>
-        <span id="tp-s">0 sets logged</span></div><div class="tp-bar"><i id="tp-bar"></i></div></div>`;
-
-    if (!s.exercises.length) {
-      html += `<div class="card" id="tr-empty"><div class="empty" style="padding:18px">No exercises yet. Add what you're training today — from the full library or create your own.</div></div>`;
-    }
+        <span id="tp-s">0 sets logged</span></div><div class="tp-bar"><i id="tp-bar"></i></div>
+        <div class="tp-save" id="tp-save">${existing ? "Saved" : "Saves as you type"}</div></div>`;
     html += `<div id="tr-list">${s.exercises.map(ex => exCardHtml(ex, existing, today)).join("")}</div>`;
-    html += `<button class="linkbtn" data-act="addex" style="margin-top:4px">+ Add exercise
-      <small>${quick ? "From the full library, or create your own." : "From the full library — it's remembered for next time."}</small></button>`;
-
+    html += `<div class="ax glass" id="ax">
+        <div class="ax-in"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>
+          <input id="ax-q" placeholder="${s.exercises.length ? "Add another exercise…" : "Search the exercise you're doing…"}" autocapitalize="none" autocomplete="off" enterkeyhint="search"></div>
+        <div class="ax-res" id="ax-res"></div></div>`;
     html += `<div style="height:70px"></div>
       <div class="savebar">
-        <button class="btn" data-act="save" data-s="${esc(ACTIVE)}">Save workout</button>
+        <button class="btn" data-act="finish">${finished ? "Done — back to Home" : "Finish workout"}</button>
       </div>`;
     view().innerHTML = html;
     paintTrainProgress();
+    if (!s.exercises.length) axShow("");
   }
 
   function exCardHtml(ex, existing, today) {
@@ -455,18 +460,13 @@ export function initTracker() {
     bar.style.width = (rowsTotal ? Math.round(rowsDone / rowsTotal * 100) : 0) + "%";
   }
   document.addEventListener("input", (e) => {
-    if (e.target.closest && e.target.closest("#view .set-row")) paintTrainProgress();
-    if (e.target.id === "ck-search") {
-      const q = e.target.value.trim().toLowerCase();
-      document.querySelectorAll("#view .ck-row").forEach(r => { r.style.display = !q || r.dataset.name.includes(q) ? "" : "none"; });
-      document.querySelectorAll("#view .ck-card").forEach(c => {
-        const any = [...c.querySelectorAll(".ck-row")].some(r => r.style.display !== "none");
-        c.style.display = any ? "" : "none";
-        if (c.previousElementSibling?.classList.contains("subhead")) c.previousElementSibling.style.display = any ? "" : "none";
-      });
-    }
+    if (e.target.closest && e.target.closest("#view .set-row")) { paintTrainProgress(); scheduleAutosave(); }
+    if (e.target.id === "ax-q") axShow(e.target.value);
   });
-  document.addEventListener("change", (e) => { if (e.target.classList?.contains("ck")) paintChooser(); });
+  document.addEventListener("focusin", (e) => { if (e.target.id === "ax-q") axShow(e.target.value); });
+  document.addEventListener("focusout", (e) => {
+    if (e.target.id === "ax-q") setTimeout(() => { if (document.activeElement?.id !== "ax-q") document.getElementById("ax-res")?.classList.remove("open"); }, 220);
+  });
 
   function setRowHtml(exId, i, pv, ghost) {
     const phW = ghost ? ghost.w : "–", phR = ghost ? ghost.r : "–";
@@ -541,38 +541,48 @@ export function initTracker() {
   }
 
   /* ---------- today's workout: pick on the day ----------
-     Nobody's week is fixed. Train asks what you're training (one session or a
-     combination like Chest + Triceps), you tick today's exercises from the full
-     library, and your picks are remembered as that session's usual list. A log is
-     stored under the session key ("chest", "chest+triceps", "quick"), so history,
-     PRs and "last time" work across any combination — they're keyed by exercise. */
-  const DAYSESS = {};            // key → today's working session (incl. exercises added mid-workout)
-  let PICKSEL = [];              // sessions ticked on the "what are you training?" screen
+     Nobody's week is fixed. Train asks what you're training today (one muscle
+     group or several — "Chest + Triceps"), then starts EMPTY: you search and add
+     only the exercises you're actually doing. Every number auto-saves; "Finish
+     workout" marks the day done. A log is stored under the group key ("chest",
+     "chest+triceps", "quick"), so the day records what you trained, while
+     history/PRs/"last time" stay keyed by exercise and work across any mix. */
+  const DAYSESS = {};            // key → today's working session (exercises added so far)
+  let PICKSEL = [];              // muscle groups ticked on the "what are you training?" screen
+  const groupKey = (g) => g.toLowerCase();
+  const groupsOf = (key) => comboParts(key).map(k => MUSCLE_GROUPS.find(g => groupKey(g) === k)
+    || MUSCLE_GROUPS.find(g => groupKey(g) === String(sess(k)?.name || "").toLowerCase())).filter(Boolean);
   const toEx = (key) => {
     const c = getCustomExercises().find(e => e.key === key);
     if (c) return { id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(c.cardio || c.group === "Cardio" ? { cardio: true } : {}) };
     const e = libExercise(key);
     return e ? { id: e.key, name: e.name, target: e.group, sets: e.sets, reps: e.reps, ...(e.cardio ? { cardio: true } : {}) } : null;
   };
+  // today's session = only what's been logged for it so far (nothing pre-ticked)
   function buildSession(key) {
-    const ids = comboParts(key).filter(k => sess(k));
-    const s = key === "quick" || !ids.length
-      ? { full: "Quick session", sub: "Train anything — add exercises as you go", exercises: [] }
-      : ids.length === 1 ? { ...sess(ids[0]), exercises: [...sess(ids[0]).exercises] }
-      : { full: ids.map(k => sess(k).name || sess(k).full).join(" + "), sub: "",
-          exercises: ids.flatMap(k => sess(k).exercises).filter((e, i, a) => a.findIndex(x => x.id === e.id) === i) };
-    // anything already logged today stays on screen even if it's not in the usual list
+    const s = { exercises: [] };
     const log = getLog(todayStr(), key);
     if (log) Object.keys(log.entries).forEach(id => {
-      if (s.exercises.some(e => e.id === id)) return;
-      const m = exMeta(id) || { name: id };
+      const m = toEx(id) || exMeta(id) || { name: (DB.names && DB.names[id]) || id };
       s.exercises.push({ id, name: m.name, target: m.target || "", sets: m.sets || 3, reps: m.reps || "", ...(m.cardio ? { cardio: true } : {}) });
     });
     return s;
   }
-  const daySession = (key) => (DAYSESS[key] ||= buildSession(key));
+  // exercises added but not logged yet survive closing the app (per user, today only)
+  const DKEY = "gymtracker.day:" + (cachedUser()?.id || "local");
+  function readDay() { try { const d = JSON.parse(localStorage.getItem(DKEY) || "null"); return d && d.date === todayStr() ? d : { date: todayStr(), lists: {} }; } catch { return { date: todayStr(), lists: {} }; } }
+  function persistDay() {
+    const d = { date: todayStr(), lists: {} };
+    Object.entries(DAYSESS).forEach(([k, v]) => { d.lists[k] = v.exercises; });
+    try { localStorage.setItem(DKEY, JSON.stringify(d)); } catch {}
+  }
+  function daySession(key) {
+    if (DAYSESS[key]) return DAYSESS[key];
+    const s = buildSession(key);
+    (readDay().lists[key] || []).forEach(ex => { if (ex && ex.id && !s.exercises.some(x => x.id === ex.id)) s.exercises.push(ex); });
+    return (DAYSESS[key] = s);
+  }
   function startQuick() { ACTIVE = "quick"; go("train"); }
-  // persist the programme in the background (honest toast only if it fails to sync)
   function saveProgrammeQuiet() {
     const u = cachedUser(); if (!u) return;
     saveProgramme(u.id, progData()).then(r => { if (!r.synced) toast("Saved on this device — it'll sync when you're back online"); });
@@ -590,113 +600,107 @@ export function initTracker() {
     if (r.result === "playing") toast(`Playing ${label}${r.device ? " on " + r.device : ""}`);
     else if (r.result === "no-device") toast("Open Spotify on your phone, then your soundtrack starts with your workout");
     else if (r.result === "premium") toast("Auto-play needs Spotify Premium");
-    else if (r.result === "reconnect") toast("Reconnect Spotify in Plan to turn on auto-play");
+    else if (r.result === "reconnect") toast("Reconnect Spotify in Settings to turn on auto-play");
   }
 
   function renderPicker() {
     const today = todayStr();
     const sched = cycleFor(today);
-    const suggested = sched.type === "train" && sess(sched.session) ? sched.session : null;
-    if (!PICKSEL.length && suggested) PICKSEL = [suggested];
-    PICKSEL = PICKSEL.filter(id => sess(id));
+    const sg = sched.type === "train" ? groupsOf(sched.session) : [];
+    if (!PICKSEL.length && sg.length) PICKSEL = sg.map(groupKey);
     const todays = DB.logs.filter(l => l.date === today);
     let html = `<div class="section-label">Train · ${esc(shortDate(today))}</div>
       <h1 class="h-title">What are you training?</h1>
-      <p class="h-sub">Pick one, or combine a few. Your usual exercises load and you choose today's.</p>`;
+      <p class="h-sub">Pick one or combine a few, then add the exercises you're doing as you go.</p>`;
     if (todays.length) {
-      html += `<div class="card tr-today"><small>Today so far</small>` + todays.map(l =>
-        `<div class="tr-cont"><span><b>${esc(sessName(l.session))}</b><em>${Object.keys(l.entries).length} exercises logged</em></span>
-          <button class="tr-switch" data-act="pick" data-s="${esc(l.session)}">Continue</button></div>`).join("") + `</div>`;
+      html += `<div class="card tr-today"><small>Today</small>` + todays.map(l => {
+        const done = l.done !== false;
+        return `<div class="tr-cont"><span><b>${esc(sessName(l.session))}</b><em>${done ? "Finished" : "In progress"} · ${Object.keys(l.entries).length} exercises</em></span>
+          <button class="tr-switch" data-act="pick" data-s="${esc(l.session)}">${done ? "View" : "Continue"}</button></div>`;
+      }).join("") + `</div>`;
     }
-    if (suggested) html += `<p class="tr-sug">Your schedule says <b>${esc(sess(suggested).name)}</b> today — or pick anything.</p>`;
-    // muscle groups in their natural order, then the user's own workouts
-    const rank = (id) => { const i = MUSCLE_GROUPS.findIndex(g => g.toLowerCase() === id.toLowerCase()); return i < 0 ? 99 : i; };
-    const order = [...SESSION_IDS].sort((a, b) => rank(a) - rank(b));
-    html += `<div class="tc-grid">` + order.map(id => {
-      const s = P.sessions[id];
-      return `<button class="tc-chip glass${PICKSEL.includes(id) ? " on" : ""}" data-act="tchip" data-id="${esc(id)}">
-        <b>${esc(s.name || s.full)}</b><small>${s.exercises.length ? s.exercises.length + " usual" : "Pick exercises"}</small></button>`;
+    if (sg.length) html += `<p class="tr-sug">Your schedule says <b>${esc(sg.join(" + "))}</b> today — or pick anything.</p>`;
+    html += `<div class="tc-grid">` + MUSCLE_GROUPS.map(g => {
+      const k = groupKey(g);
+      const last = [...DB.logs].reverse().find(l => comboParts(l.session).includes(k));
+      return `<button class="tc-chip glass${PICKSEL.includes(k) ? " on" : ""}" data-act="tchip" data-id="${k}">
+        <b>${esc(g)}</b><small>${last ? "Last: " + esc(shortDate(last.date)) : "Not trained yet"}</small></button>`;
     }).join("") + `</div>`;
     html += `<button class="btn" id="tgo" data-act="tgo"${PICKSEL.length ? "" : " disabled"}>${pickLabel()}</button>
-      <button class="linkbtn" data-act="quickstart" style="margin-top:10px">Empty session<small>Skip the list and add exercises as you go.</small></button>`;
+      <button class="linkbtn" data-act="quickstart" style="margin-top:10px">Just train<small>No muscle group — add any exercise as you go.</small></button>`;
     view().innerHTML = html;
   }
   const pickLabel = () => PICKSEL.length
-    ? `Choose exercises · ${PICKSEL.map(id => sess(id).name || sess(id).full).join(" + ")}`
+    ? `Start · ${MUSCLE_GROUPS.filter(g => PICKSEL.includes(groupKey(g))).join(" + ")}`
     : "Pick what you're training";
-
-  // which muscle groups a session draws from: its own group (sectors are keyed by
-  // group) plus the groups of the exercises it already holds
-  function groupsFor(ids) {
-    const gs = new Set();
-    ids.forEach(id => {
-      const m = MUSCLE_GROUPS.find(g => g.toLowerCase() === id.toLowerCase());
-      if (m) gs.add(m);
-      sess(id).exercises.forEach(e => { const g = MUSCLE_GROUPS.find(x => x.toLowerCase() === String(e.target || "").toLowerCase()); if (g) gs.add(g); });
-    });
-    return gs.size ? [...gs] : MUSCLE_GROUPS;
-  }
-  let CHOOSE_ALL = false;
-  function renderChooser() {
-    const ids = PICKSEL.filter(id => sess(id));
-    if (!ids.length) return renderPicker();
-    const usual = ids.flatMap(id => sess(id).exercises).filter((e, i, a) => a.findIndex(x => x.id === e.id) === i);
-    const usualIds = new Set(usual.map(e => e.id));
-    const groups = CHOOSE_ALL ? MUSCLE_GROUPS : groupsFor(ids);
-    const custom = getCustomExercises();
-    const row = (key, name, meta, on) => `<label class="ck-row" data-name="${esc(name.toLowerCase())}">
-        <input type="checkbox" class="ck" data-k="${esc(key)}"${on ? " checked" : ""}><span class="ck-box"></span>
-        <span class="ck-t"><b>${esc(name)}</b><small>${esc(meta)}</small></span></label>`;
-    let html = `<div class="tr-top"><div class="section-label">Today's exercises</div>
-        <button class="tr-switch" data-act="picker">Back</button></div>
-      <h1 class="h-title">${esc(ids.map(id => sess(id).name || sess(id).full).join(" + "))}</h1>
-      <p class="h-sub">Tick what you're doing today. Your picks are remembered for next time.</p>
-      <input class="inp ck-search" id="ck-search" placeholder="Search ${CHOOSE_ALL ? "every" : "these"} exercises…" autocapitalize="none">`;
-    if (usual.length) html += `<div class="subhead">Your usual</div><div class="card ck-card">` +
-      usual.map(e => row(e.id, e.name, `${e.target || ""} · ${e.sets}×${e.reps}`, true)).join("") + `</div>`;
-    groups.forEach(g => {
-      const items = [...custom.filter(e => e.group === g), ...EXERCISE_LIBRARY.filter(e => e.group === g)].filter(e => !usualIds.has(e.key));
-      if (!items.length) return;
-      html += `<div class="subhead">${esc(g)} · library</div><div class="card ck-card">` +
-        items.map(e => row(e.key, e.name, `${e.custom ? "Yours" : e.equipment} · ${e.sets}×${e.reps}`, false)).join("") + `</div>`;
-    });
-    if (!CHOOSE_ALL) html += `<button class="linkbtn" data-act="ckall">Show every muscle group<small>Add anything from the full library.</small></button>`;
-    html += `<button class="linkbtn" data-act="ckcustom">+ Create your own exercise<small>Saved to your library.</small></button>
-      <div style="height:70px"></div>
-      <div class="savebar"><button class="btn" id="ck-go" data-act="tstart">Start workout</button></div>`;
-    view().innerHTML = html;
-    paintChooser();
-  }
-  function paintChooser() {
-    const n = document.querySelectorAll("#view .ck:checked").length;
-    const b = document.getElementById("ck-go");
-    if (b) b.textContent = n ? `Start workout · ${n} exercise${n === 1 ? "" : "s"}` : "Tick at least one exercise";
-  }
-  function startChosen() {
-    const ids = PICKSEL.filter(id => sess(id));
-    const keys = [...document.querySelectorAll("#view .ck:checked")].map(c => c.dataset.k);
-    if (!keys.length) { toast("Tick at least one exercise"); return; }
-    // remember today's picks as each session's usual list (keeping any custom sets/reps)
-    const next = Object.fromEntries(ids.map(id => [id, []]));
-    keys.forEach(k => {
-      const existingEx = ids.map(id => sess(id).exercises.find(e => e.id === k)).find(Boolean);
-      const ex = existingEx || toEx(k);
-      if (!ex) return;
-      next[homeSessionFor(P, ids, k, ex.target)].push(ex);
-    });
-    ids.forEach(id => { P.sessions[id].exercises = next[id]; });
-    saveProgrammeQuiet();
-    ACTIVE = comboKey(ids);
-    delete DAYSESS[ACTIVE];
+  function startPicked() {
+    const order = MUSCLE_GROUPS.map(groupKey).filter(k => PICKSEL.includes(k));
+    if (!order.length) return false;
+    ACTIVE = comboKey(order);
     PICKSEL = [];
     go("train");
     return true;
   }
 
-  async function saveWorkout(session) {
+  /* ---------- search-to-add (the whole library lives here) ---------- */
+  function axPool() {
+    return [...getCustomExercises().map(c => ({ key: c.key, name: c.name, group: c.group, equipment: "Yours", custom: true })),
+            ...EXERCISE_LIBRARY];
+  }
+  function axResults(q) {
+    const groups = groupsOf(ACTIVE);
+    const have = new Set(daySession(ACTIVE).exercises.map(e => e.id));
+    const recency = new Map();
+    [...DB.logs].sort((a, b) => (a.date < b.date ? 1 : -1)).forEach(l => Object.keys(l.entries).forEach(id => { if (!recency.has(id)) recency.set(id, recency.size); }));
+    const inGroup = (e) => !groups.length || groups.includes(e.group);
+    let list = axPool().filter(e => !have.has(e.key));
+    if (q) {
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      list = list.filter(e => words.every(w => (e.name + " " + e.group + " " + (e.equipment || "")).toLowerCase().includes(w)));
+      list.sort((a, b) => (inGroup(b) - inGroup(a)) || (b.name.toLowerCase().startsWith(words[0]) - a.name.toLowerCase().startsWith(words[0]))
+        || ((recency.get(a.key) ?? 1e6) - (recency.get(b.key) ?? 1e6)));
+    } else {
+      list = list.filter(inGroup).sort((a, b) => (recency.get(a.key) ?? 1e6) - (recency.get(b.key) ?? 1e6));
+    }
+    return list.slice(0, q ? 20 : 14);
+  }
+  function axShow(q) {
+    const box = document.getElementById("ax-res"); if (!box) return;
+    const rows = axResults(q.trim());
+    const groups = groupsOf(ACTIVE);
+    const head = !q.trim() ? `<div class="ax-h">${groups.length ? esc(groups.join(" + ")) : "Exercises"} · your recent first</div>` : "";
+    box.innerHTML = head + rows.map(e => {
+      const last = lastSetsFor(e.key, todayStr());
+      const lastTxt = last ? ` · last ${last.sets.map(x => `${x.w}×${x.r}`).slice(0, 2).join(", ")}` : "";
+      return `<button class="ax-row" data-act="axadd" data-k="${esc(e.key)}"><span><b>${esc(e.name)}</b>
+        <small>${esc(e.group)} · ${esc(e.equipment || "")}${esc(lastTxt)}</small></span><i>+</i></button>`;
+    }).join("") + (q.trim() && !rows.some(e => e.name.toLowerCase() === q.trim().toLowerCase())
+      ? `<button class="ax-row ax-new" data-act="axcreate" data-q="${esc(q.trim())}"><span><b>Create “${esc(q.trim())}”</b>
+          <small>Saved to your library${groups.length ? " under " + esc(groups[0]) : ""}</small></span><i>+</i></button>` : "")
+      + (!rows.length && !q.trim() ? `<div class="ax-h">Type to search all ${EXERCISE_LIBRARY.length}+ exercises</div>` : "");
+    box.classList.add("open");
+  }
+  function addToWorkout(ex) {
+    const s = daySession(ACTIVE);
+    if (s.exercises.some(x => x.id === ex.id)) return;
+    s.exercises.push(ex);
+    persistDay();
+    const today = todayStr();
+    document.getElementById("tr-list").insertAdjacentHTML("beforeend", exCardHtml(ex, getLog(today, ACTIVE), today));
+    document.getElementById("tp-of").textContent = s.exercises.length;
+    const q = document.getElementById("ax-q"); q.value = ""; q.placeholder = "Add another exercise…";
+    document.getElementById("ax-res").classList.remove("open");
+    const card = document.querySelector(`#tr-list .ex[data-ex="${CSS.escape(ex.id)}"]`);
+    card?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => card?.querySelector("input")?.focus({ preventScroll: true }), 350);
+    paintTrainProgress();
+  }
+
+  /* ---------- auto-save + finish ---------- */
+  function collectEntries() {
     const entries = {};
     let count = 0, blankWeight = 0;
-    document.querySelectorAll(`.ex[data-ex]`).forEach(card => {
+    document.querySelectorAll("#view .ex[data-ex]").forEach(card => {
       const exId = card.dataset.ex;
       const cardio = card.classList.contains("cardio");
       const weighted = !cardio && (prFor(exId)?.w || 0) > 0;     // this lift is normally loaded
@@ -710,19 +714,101 @@ export function initTracker() {
       });
       if (sets.length) { entries[exId] = sets; count += sets.length; }
     });
-    if (count === 0) { toast("Log at least one set"); return; }
+    return { entries, count, blankWeight };
+  }
+  let AUTOSAVE_T = null, PUSH_T = null;
+  const saveState = (t) => { const el = document.getElementById("tp-save"); if (el) el.textContent = t; };
+  function autosave() {
+    AUTOSAVE_T = null;
+    if (!ACTIVE || !document.querySelector('#view [data-act="finish"]')) return;
+    const { entries, count } = collectEntries();
+    const today = todayStr();
+    const existed = getLog(today, ACTIVE);
+    if (!count) { saveState(existed ? "Saved" : "Saves as you type"); return; }
+    const rec = upsertLog(today, ACTIVE, entries);
+    if (!existed) { rec.done = false; rec.startedAt = Date.now(); save(); }   // a new workout is in progress until Finish
+    saveState("Saved");
+    clearTimeout(PUSH_T);
+    PUSH_T = setTimeout(() => pushRecord("log", rec), 4000);
+  }
+  function scheduleAutosave() { clearTimeout(AUTOSAVE_T); saveState("Saving…"); AUTOSAVE_T = setTimeout(autosave, 600); }
+  function flushAutosave() {
+    if (AUTOSAVE_T) { clearTimeout(AUTOSAVE_T); autosave(); }
+    if (PUSH_T) { clearTimeout(PUSH_T); PUSH_T = null; syncPending(); }
+  }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) flushAutosave(); });
+  window.addEventListener("pagehide", flushAutosave);
+
+  async function finishWorkout() {
+    const today = todayStr();
+    const before = getLog(today, ACTIVE);
+    if (before && before.done !== false && !AUTOSAVE_T) { go("today"); return; }   // already finished → "Done — back to Home"
+    clearTimeout(AUTOSAVE_T); AUTOSAVE_T = null; clearTimeout(PUSH_T); PUSH_T = null;
+    stopRest();
+    const { entries, count, blankWeight } = collectEntries();
+    if (count === 0) { toast("Log at least one set first"); return; }
     // a grey placeholder is last time's number, not a value — don't silently log 0 kg (AUDIT M4)
     if (blankWeight && !confirm(`${blankWeight} set${blankWeight === 1 ? " has" : "s have"} reps but no weight.\n\nSave as bodyweight (0 kg)? Tap Cancel to go back and add the weight.`)) return;
-    const firstSave = !getLog(todayStr(), session);
-    const rec = upsertLog(todayStr(), session, entries);
-    // one squad post per session — re-saving ("continue logging") no longer double-counts (AUDIT H2)
+    const rec = upsertLog(today, ACTIVE, entries);
+    rec.done = true; rec.finishedAt = Date.now(); rec.startedAt ||= rec.finishedAt;
+    // one squad post per workout, on finish (AUDIT H2)
     const u = cachedUser(), sid = getCurrentSquad();
-    if (firstSave && u && sid && getPrivacy().workouts) {
-      postActivity(u.id, sid, "workout", { title: sessName(session), exercises: Object.keys(entries).length });
+    if (!rec.posted && u && sid && getPrivacy().workouts) {
+      postActivity(u.id, sid, "workout", { title: sessName(ACTIVE), exercises: Object.keys(entries).length });
+      rec.posted = true;
     }
-    go("progress");
+    save();
+    renderDone(rec);
     const ok = await pushRecord("log", rec);
-    toast(ok ? "Workout saved" : "Saved on this device — it'll sync when you're back online");
+    if (!ok) toast("Saved on this device — it'll sync when you're back online");
+  }
+
+  function renderDone(rec) {
+    const ids = Object.keys(rec.entries);
+    const sets = ids.reduce((t, id) => t + rec.entries[id].length, 0);
+    const vol = Math.round(ids.filter(id => !isCardio(id)).reduce((t, id) => t + rec.entries[id].reduce((v, x) => v + (Number(x.w) || 0) * (Number(x.r) || 0), 0), 0));
+    const mins = rec.startedAt && rec.finishedAt ? Math.max(1, Math.round((rec.finishedAt - rec.startedAt) / 60000)) : null;
+    const prs = ids.filter(id => !isCardio(id)).map(id => {
+      const best = H.bestSet(rec.entries[id]); const prior = prFor(id, rec.date);
+      return prior && best && H.betterSet(prior, best) === best && (Number(best.w) !== Number(prior.w) || Number(best.r) !== Number(prior.r))
+        ? { id, best } : null;
+    }).filter(Boolean);
+    const stat = (n, l) => `<div><b>${n}</b><span>${l}</span></div>`;
+    view().innerHTML = `<div class="wd">
+      <canvas class="wd-confetti" id="wd-confetti" aria-hidden="true"></canvas>
+      <div class="wd-tick"><svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h1 class="wd-h">Workout done</h1>
+      <p class="wd-sub">${esc(sessName(rec.session))} · ${esc(shortDate(rec.date))}. Well done${PROFILE?.name ? ", " + esc(PROFILE.name.split(" ")[0]) : ""} — that's ${goalNow() - Math.max(0, goalNow() - weekBounds().filter(d => DB.logs.some(l => l.date === d)).length)} of ${goalNow()} this week.</p>
+      <div class="wd-stats glass">${stat(ids.length, "exercises")}${stat(sets, "sets")}${stat(vol >= 1000 ? (vol / 1000).toFixed(1) + "t" : vol + "kg", "volume")}${mins ? stat(mins + "m", "time") : ""}</div>
+      ${prs.length ? `<div class="subhead">New personal records</div><div class="card">` + prs.map(p =>
+        `<div class="pr-row"><span>${esc(exMeta(p.id)?.name || p.id)}</span><span class="v">${esc(fmtSet(p.best))}</span></div>`).join("") + `</div>` : ""}
+      <button class="h2-cta" data-act="gohome">Back to Home</button>
+      <button class="h2-cta ghost" data-act="pick" data-s="${esc(rec.session)}" style="margin-top:10px">Edit this workout</button>
+    </div>`;
+    window.scrollTo(0, 0);
+    confetti(document.getElementById("wd-confetti"));
+  }
+  function confetti(cv) {
+    if (!cv || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    const W = cv.width = innerWidth * dpr, Hh = cv.height = innerHeight * dpr;
+    const ctx = cv.getContext("2d");
+    const cols = ["#CCFF00", "#F2F3EF", "#9AA394", "#CCFF00", "#FFFFFF"];
+    const P2 = Array.from({ length: 140 }, () => ({
+      x: W / 2 + (Math.random() - .5) * W * .3, y: Hh * .32, vx: (Math.random() - .5) * 15 * dpr, vy: (-Math.random() * 15 - 5) * dpr,
+      w: (5 + Math.random() * 6) * dpr, h: (8 + Math.random() * 8) * dpr, r: Math.random() * 6, vr: (Math.random() - .5) * .35,
+      c: cols[Math.floor(Math.random() * cols.length)] }));
+    const t0 = performance.now();
+    (function frame(t) {
+      const k = (t - t0) / 2600; if (k > 1 || !cv.isConnected) { ctx.clearRect(0, 0, W, Hh); return; }
+      ctx.clearRect(0, 0, W, Hh); ctx.globalAlpha = Math.min(1, (1 - k) * 2.2);
+      for (const p of P2) {
+        p.vy += .42 * dpr; p.vx *= .985; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2))); ctx.restore();
+      }
+      requestAnimationFrame(frame);
+    })(t0);
+    try { navigator.vibrate?.([30, 40, 30]); } catch {}
   }
 
   /* ============================ PROGRESS ============================ */
@@ -1183,52 +1269,44 @@ export function initTracker() {
 
   /* ============================ PLAN (reference + settings) ============================ */
   function renderPlan() {
+    const t = getActiveTargets();
+    let html = `<div class="section-label">Your plan</div><h1 class="h-title">The Plan</h1>
+      <p class="h-sub">Fuel, supplements and the rules that make the training work.</p>`;
+    html += `<div class="subhead">Nutrition · your targets</div><div class="card"><ul class="clean">
+      <li><b>Calories:</b> ${t.kcal}</li>
+      <li><b>Protein:</b> ${t.protein} g</li>
+      <li><b>Carbs:</b> ${t.carbs} g · <b>Fats:</b> ${t.fats} g</li>
+      <li><b>Breakfast:</b> oats + whey + berries + peanut butter</li>
+      <li><b>Timing:</b> breakfast · lunch · post-workout shake · dinner</li></ul>
+      <button class="linkbtn" data-act="edittargets" style="margin:12px 0 0">Edit my targets</button></div>`;
+    html += renderFuel();
+    html += `<div class="subhead">Supplements</div><div class="card"><ul class="clean">` +
+      P.supplements.map(s => `<li><b>${esc(s[0])}</b> — ${esc(s[1])}, ${esc(s[2])}. ${esc(s[3])}.</li>`).join("") +
+      `</ul><div class="note">${esc(P.aminoNote)}</div></div>`;
+    html += `<div class="subhead">Warm-up · every session</div><div class="card"><ul class="clean">` +
+      P.warmup.map(w => `<li>${esc(w)}</li>`).join("") + `</ul></div>`;
+    html += `<div class="subhead">Training rules</div><div class="card"><ul class="clean">` +
+      P.rules.map(r => `<li>${esc(r)}</li>`).join("") + `</ul></div>`;
+    html += `<button class="linkbtn" data-act="settings" style="margin-top:6px">Settings<small>Weekly goal, schedule, Spotify, privacy, your data.</small></button>`;
+    view().innerHTML = html;
+  }
+
+  /* ============================ SETTINGS ============================ */
+  function renderSettings() {
     const DN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const goal = goalNow();
     const schedTxt = hasSchedule()
-      ? P.cycle.map((c, i) => c.type === "train" && sess(c.session) ? `${DN[i]} ${esc(sess(c.session).name)}` : null).filter(Boolean).join(" · ")
+      ? P.cycle.map((c, i) => c.type === "train" && sess(c.session) ? `${DN[i]} ${esc(oneName(c.session))}` : null).filter(Boolean).join(" · ")
       : "None — you pick on the day";
-    let html = `<div class="section-label">Your training</div><h1 class="h-title">The Plan</h1>
-      <p class="h-sub">Train what you want, when you can. Set a weekly goal and keep your usual exercises here.</p>
+    let html = `<div class="section-label">Your app</div><h1 class="h-title">Settings</h1>
+      <div class="subhead">Training</div>
       <div class="card pl-week">
         <small>Weekly goal</small>
         <div class="goal-row">${[1, 2, 3, 4, 5, 6, 7].map(n => `<button class="goal-chip${n === goal ? " on" : ""}" data-act="setgoal" data-n="${n}">${n}</button>`).join("")}</div>
         <p class="pl-note">sessions a week — Home's ring counts any workout toward it.</p>
         <div class="pl-sched"><span><small>Schedule · optional</small><b>${schedTxt}</b></span>
           <button class="tr-switch" data-act="weekedit">Edit</button></div>
-      </div>
-      <button class="btn" data-act="editprog" style="margin:0 0 18px">Edit my workouts &amp; exercises</button>`;
-
-    html += `<div class="subhead">Warm-up · every session</div><div class="card"><ul class="clean">` +
-      P.warmup.map(w => `<li>${esc(w)}</li>`).join("") + `</ul></div>`;
-
-    html += `<div class="subhead">Your workouts · usual exercises</div>`;
-    SESSION_IDS.forEach(id => {
-      const s = P.sessions[id];
-      const onDays = P.cycle.map((c, i) => (c.type === "train" && c.session === id ? DN[i] : null)).filter(Boolean);
-      html += `<div class="plan-day"><div class="ph"><span class="n">${onDays.length ? onDays.join(" ") : "Any day"}</span>
-        <div><b>${esc(s.full)}</b><span>${esc(s.sub)}</span></div></div>` +
-        s.exercises.map(e => `<div class="plan-ex"><span>${esc(e.name)}${e.isNew ? '<span class="tag-new">NEW</span>' : ""}</span>
-          <span class="s">${esc(e.reps)} · ${e.sets}×</span></div>`).join("") + `</div>`;
-    });
-
-    html += `<div class="subhead">Training rules</div><div class="card"><ul class="clean">` +
-      P.rules.map(r => `<li>${esc(r)}</li>`).join("") + `</ul></div>`;
-
-    const t = getActiveTargets();
-    html += `<div class="subhead">Nutrition · your targets</div><div class="card"><ul class="clean">
-      <li><b>Calories:</b> ${t.kcal}</li>
-      <li><b>Protein:</b> ${t.protein} g</li>
-      <li><b>Carbs:</b> ${t.carbs} g · <b>Fats:</b> ${t.fats} g</li>
-      <li><b>Breakfast:</b> oats + whey + berries + peanut butter</li>
-      <li><b>Timing:</b> breakfast · lunch · post-workout shake · dinner</li></ul></div>`;
-
-    html += renderFuel();
-
-    html += `<div class="subhead">Supplements</div><div class="card"><ul class="clean">` +
-      P.supplements.map(s => `<li><b>${esc(s[0])}</b> — ${esc(s[1])}, ${esc(s[2])}. ${esc(s[3])}.</li>`).join("") +
-      `</ul><div class="note">${esc(P.aminoNote)}</div></div>`;
-
+      </div>`;
     // privacy
     const pv = getPrivacy();
     const privRow = (key, label) => `<div class="priv-row"><span>${label}</span>
@@ -1266,11 +1344,9 @@ export function initTracker() {
       : `<p class="sq-ihint" style="margin:0">Music sharing is off. Turn on <b>Music</b> above to share a playlist with your squad.</p>`}
       </div>`;
 
-    // settings / data
-    html += `<div class="subhead">Set-up &amp; data</div>`;
-    html += `<button class="linkbtn" data-act="loadsplit">Reset workouts to the 8 muscle groups
-        <small>Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio with default exercises. Your logged history and weekly goal are kept.</small></button>
-      <button class="linkbtn" data-act="ics">Add gym-day reminders to Calendar
+    // data
+    html += `<div class="subhead">Your data</div>`;
+    html += `${hasSchedule() ? `<button class="linkbtn" data-act="ics">` : `<button class="linkbtn" data-act="ics" style="display:none">`}Add gym-day reminders to Calendar
         <small>Weekly alerts for each training day (.ics file for iPhone Calendar).</small></button>
       <button class="linkbtn" data-act="export">⬇︎ Back up my data
         <small>Download all your logs as a file you can keep safe.</small></button>
@@ -1356,10 +1432,7 @@ export function initTracker() {
       ${mus.url
         ? `<a class="linkbtn" href="${esc(safeMusicUrl(mus.url) || "#")}" target="_blank" rel="noopener noreferrer">${esc(mus.label || "Your soundtrack")}<small>Open your training playlist</small></a>`
         : `<button class="linkbtn" data-act="goplan">Set your soundtrack<small>Share a playlist with your squad</small></button>`}
-      <div class="subhead">Account</div>
-      <div class="card"><div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Signed in as</div>
-        <div style="font-family:var(--cond);font-size:16px;margin-top:3px">${esc(u?.email || "—")}</div></div>
-      <button class="linkbtn" data-act="logout" style="border-color:#5a3030;margin-top:12px">Log out</button>`;
+      <button class="linkbtn" data-act="settings">Settings<small>Weekly goal, schedule, Spotify, privacy, your data, log out.</small></button>`;
 
     view().innerHTML = html;
     loadMyPhotos();
@@ -1580,7 +1653,7 @@ export function initTracker() {
         const url = it.dataset.url, name = it.dataset.name;
         if (!url) { toast("That playlist has no shareable link"); return; }
         setMusic(cachedUser().id, url, name)
-          .then(() => { ov.remove(); toast("Soundtrack set"); if (TAB === "plan") renderPlan(); })
+          .then(() => { ov.remove(); toast("Soundtrack set"); if (TAB === "settings") renderSettings(); else if (TAB === "plan") renderPlan(); })
           .catch(e => toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"));
       }));
     } catch (e) {
@@ -1774,24 +1847,18 @@ export function initTracker() {
       el.classList.toggle("on", PICKSEL.includes(id));
       const b = document.getElementById("tgo"); b.disabled = !PICKSEL.length; b.textContent = pickLabel();
     }
-    else if (act === "tgo") { if (PICKSEL.length) { CHOOSE_ALL = false; renderChooser(); window.scrollTo(0, 0); } }
-    else if (act === "ckall") {
-      // keep every tick AND untick made so far
-      const state = new Map([...document.querySelectorAll("#view .ck")].map(c => [c.dataset.k, c.checked]));
-      CHOOSE_ALL = true; renderChooser();
-      document.querySelectorAll("#view .ck").forEach(c => { if (state.has(c.dataset.k)) c.checked = state.get(c.dataset.k); });
-      paintChooser();
+    else if (act === "tgo") { if (startPicked() && !getLog(todayStr(), ACTIVE)) maybeAutoplay(); }
+    else if (act === "axadd") { const ex = toEx(el.dataset.k); if (ex) addToWorkout(ex); }
+    else if (act === "axcreate") {
+      const groups = groupsOf(ACTIVE);
+      if (!groups.length) { openExercisePicker(ex => addToWorkout(ex)); return; }
+      addCustomExercise(cachedUser()?.id, { name: el.dataset.q, group: groups[0] })
+        .then(c => addToWorkout({ id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(c.cardio ? { cardio: true } : {}) }))
+        .catch(() => toast("Couldn't create that exercise"));
     }
-    else if (act === "ckcustom") {
-      openExercisePicker(ex => {
-        const card = document.querySelector("#view .ck-card");
-        if (!card) return renderChooser();
-        card.insertAdjacentHTML("afterbegin", `<label class="ck-row" data-name="${esc(ex.name.toLowerCase())}"><input type="checkbox" class="ck" data-k="${esc(ex.id)}" checked><span class="ck-box"></span>
-          <span class="ck-t"><b>${esc(ex.name)}</b><small>${esc(ex.target || "")} · ${ex.sets}×${ex.reps}</small></span></label>`);
-        paintChooser();
-      });
-    }
-    else if (act === "tstart") { const started = startChosen(); if (started && !getLog(todayStr(), ACTIVE)) maybeAutoplay(); }
+    else if (act === "finish") finishWorkout();
+    else if (act === "gohome") go("today");
+    else if (act === "settings") go("settings");
     else if (act === "photoadd") document.getElementById("photo-file")?.click();
     else if (act === "photoview") openPhotoViewer(el.dataset.src, el.dataset.id);
     else if (act === "phopt") el.parentElement.querySelectorAll(".seg-b").forEach(b => b.classList.toggle("on", b === el));
@@ -1820,32 +1887,17 @@ export function initTracker() {
       deletePhoto(r).then(() => { el.closest(".modal")?.remove(); toast("Photo deleted"); if (TAB === "profile") renderProfile(); })
         .catch(() => toast("Couldn't delete — try again"));
     }
-    else if (act === "addex") openExercisePicker(ex => {
-      const s = daySession(ACTIVE);
-      if (s.exercises.some(x => x.id === ex.id)) { toast("Already in today's workout"); return; }
-      s.exercises.push(ex);
-      document.getElementById("tr-empty")?.remove();
-      document.getElementById("tr-list").insertAdjacentHTML("beforeend", exCardHtml(ex, getLog(todayStr(), ACTIVE), todayStr()));
-      document.getElementById("tp-of").textContent = s.exercises.length;
-      paintTrainProgress();
-      if (ACTIVE !== "quick") {
-        const ids = comboParts(ACTIVE).filter(k => sess(k));
-        const home = homeSessionFor(P, ids, ex.id, ex.target);
-        if (home && !sess(home).exercises.some(x => x.id === ex.id)) {
-          sess(home).exercises.push(ex); saveProgrammeQuiet();
-          toast(`Added — saved to your ${sess(home).name || sess(home).full} list`);
-        }
-      }
-    });
+    else if (act === "addex") openExercisePicker(ex => addToWorkout(ex));
     else if (act === "exrm") {
       // today only — the usual list is edited in Plan, and logged sets are only saved on Save
       const s = daySession(ACTIVE);
       s.exercises = s.exercises.filter(x => x.id !== el.dataset.ex);
+      persistDay();
       el.closest(".ex")?.remove();
       document.getElementById("tp-of").textContent = s.exercises.length;
       paintTrainProgress();
+      scheduleAutosave();
     }
-    else if (act === "save") { stopRest(); saveWorkout(el.dataset.s); }
     else if (act === "exhist") openExerciseHistory(el.dataset.ex);
     else if (act === "restskip") stopRest();
     else if (act === "restadj" && REST) {
@@ -1864,6 +1916,7 @@ export function initTracker() {
       row.remove();
       [...rows.children].forEach((r, i) => r.querySelector(".sn").textContent = i + 1);
       paintTrainProgress();
+      scheduleAutosave();
     }
     else if (act === "savebw") {
       const v = parseFloat(document.getElementById("bw").value);
@@ -1956,7 +2009,6 @@ export function initTracker() {
     else if (act === "logout") {
       if (confirm("Log out of No Limit?")) signOut().then(() => location.reload());
     }
-    else if (act === "editprog") openEditor(() => go("plan"));
     else if (act === "profile") go("profile");
     else if (act === "gosquad") go("squad");
     else if (act === "goplan") go("plan");
@@ -1994,19 +2046,6 @@ export function initTracker() {
       updateProfileBasics(cachedUser().id, { name, username: username || null })
         .then(() => { PROFILE = { ...(PROFILE || {}), name, username: username || null }; el.closest(".modal")?.remove(); renderHeader(); toast("Profile updated"); renderProfile(); })
         .catch(e => { el.disabled = false; toast(/duplicate|unique/i.test(e?.message || "") ? "That username is taken" : "Couldn't save"); });
-    }
-    else if (act === "loadsplit") {
-      if (!confirm("Load the 8 muscle-group sessions? This replaces your current programme structure (Chest, Shoulders, Back, Legs, Biceps, Triceps, Core, Cardio). Your logged workout history stays — only the plan layout changes.")) return;
-      const u = cachedUser();
-      // fresh sectors; keep the user's goal and any schedule days that still make sense
-      const fresh = defaultProgrammeData();
-      fresh.cycle = P.cycle.map(c => (c.type === "train" && fresh.sessions[c.session] ? c : { type: "rest" }));
-      if (P.goal) fresh.goal = P.goal;
-      (u ? saveProgramme(u.id, fresh) : Promise.resolve({ synced: true }))
-        .then(r => {
-          toast(r.synced ? "New split loaded" : "Split saved on this device — it'll sync when you're back online");
-          setTimeout(() => location.reload(), 650);
-        });
     }
     else if (act === "history") renderHistory();
     else if (act === "backprogress") go("progress");
@@ -2073,10 +2112,10 @@ export function initTracker() {
       const next = !getPrivacy()[key];
       setPrivacy(cachedUser().id, { [key]: next });
       if (key === "music" && !next) setMusic(cachedUser().id, "", "").catch(() => {}); // unshare on opt-out
-      renderPlan();
+      renderSettings();
     }
     else if (act === "spoton") { connectSpotify().catch(() => toast("Spotify isn't set up yet")); }
-    else if (act === "spotoff") { disconnectSpotify(); toast("Spotify disconnected"); renderPlan(); }
+    else if (act === "spotoff") { disconnectSpotify(); toast("Spotify disconnected"); renderSettings(); }
     else if (act === "spotpick") { openSpotifyPicker(); }
     else if (act === "aptoggle") {
       const on = !autoplayOn();
@@ -2090,7 +2129,7 @@ export function initTracker() {
       if (url && !safeMusicUrl(url)) { toast("Enter a valid http(s) link"); return; }
       el.disabled = true;
       setMusic(cachedUser().id, url, label)
-        .then(() => { toast(url ? "Soundtrack saved" : "Soundtrack cleared"); if (TAB === "plan") renderPlan(); })
+        .then(() => { toast(url ? "Soundtrack saved" : "Soundtrack cleared"); if (TAB === "settings") renderSettings(); else if (TAB === "plan") renderPlan(); })
         .catch(e => { el.disabled = false; toast(/column|music_url|schema/i.test(e?.message || "") ? "Run migrate_8.sql first" : "Couldn't save"); });
     }
   });

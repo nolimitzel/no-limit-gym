@@ -65,3 +65,15 @@ test("merged output is sorted by date", () => {
                       { logs: [log("2026-10-01", "b", {})] });
   assert.deepEqual(out.logs.map((l) => l.date), ["2026-10-01", "2026-10-05"]);
 });
+
+test("an in-progress / finished workout keeps its state through a cloud merge", () => {
+  const cloud = { logs: [{ date: "2026-10-15", session: "chest+triceps", entries: { "flat-db-press": [{ w: 30, r: 8 }] } }] };
+  const open = mergeDB({ logs: [{ ...cloud.logs[0], synced: true, done: false, startedAt: 1 }] }, cloud);
+  assert.equal(open.logs[0].done, false);
+  assert.equal(open.logs[0].startedAt, 1);
+  const fin = mergeDB({ logs: [{ ...cloud.logs[0], synced: true, done: true, posted: true }] }, cloud);
+  assert.equal(fin.logs[0].done, true);
+  assert.equal(fin.logs[0].posted, true);
+  // a workout only the cloud knows about (another device / older version) counts as finished
+  assert.equal(mergeDB({ logs: [] }, cloud).logs[0].done, undefined);
+});
