@@ -49,7 +49,7 @@ export function mergeDB(local = {}, cloud = {}) {
     { same: (a, b) => Number(a.weight) === Number(b.weight) });
   const macros = mergeRecords(local.macros, cloud.macros, (m) => m.date, {
     same: (a, b) => MACROS.every(k => (Number(a[k]) || 0) === (Number(b[k]) || 0)),
-    preserve: ["meals"],
+    preserve: ["meals", "supps"],
   });
   return {
     logs: logs.records.sort(byDate),

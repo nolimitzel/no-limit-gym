@@ -73,11 +73,10 @@ export async function pushMacros(userId, entry) {
     kcal: entry.kcal ?? null, protein: entry.protein ?? null,
     carbs: entry.carbs ?? null, fats: entry.fats ?? null
   };
-  let { error } = await supabase.from("nutrition_logs")
-    .upsert({ ...row, meals: entry.meals ?? null }, { onConflict: "user_id,date" });
-  if (isMissingColumn(error)) {                  // before migrate_11: sync totals, keep meals on-device
-    ({ error } = await supabase.from("nutrition_logs").upsert(row, { onConflict: "user_id,date" }));
-  }
+  const up = (r) => supabase.from("nutrition_logs").upsert(r, { onConflict: "user_id,date" });
+  let { error } = await up({ ...row, meals: entry.meals ?? null, supps: entry.supps ?? null });
+  if (isMissingColumn(error)) ({ error } = await up({ ...row, meals: entry.meals ?? null }));   // before migrate_13
+  if (isMissingColumn(error)) ({ error } = await up(row));                                      // before migrate_11
   if (error) throw error;
 }
 
@@ -93,7 +92,8 @@ export async function loadAll(userId) {
       .eq("user_id", userId).order("id").range(a, b)),
     fetchAll((a, b) => supabase.from("bodyweight_logs").select("date,weight")
       .eq("user_id", userId).order("date").range(a, b)),
-    macrosQuery("date,kcal,protein,carbs,fats,meals")
+    macrosQuery("date,kcal,protein,carbs,fats,meals,supps")
+      .catch((e) => { if (isMissingColumn(e)) return macrosQuery("date,kcal,protein,carbs,fats,meals"); throw e; })
       .catch((e) => { if (isMissingColumn(e)) return macrosQuery("date,kcal,protein,carbs,fats"); throw e; }),
   ]);
 
@@ -121,6 +121,7 @@ export async function loadAll(userId) {
     macros: macros.map((m) => {
       const r = { date: m.date, kcal: m.kcal, protein: m.protein, carbs: m.carbs, fats: m.fats };
       if (Array.isArray(m.meals)) r.meals = m.meals;
+      if (Array.isArray(m.supps)) r.supps = m.supps;
       return r;
     }),
     names,

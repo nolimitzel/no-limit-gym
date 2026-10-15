@@ -14,6 +14,9 @@ import { getProfile, updateProfileBasics } from "./auth/profile.js";
 import { uploadAvatar } from "./data/storage.js";
 import { uploadPhoto, listMyPhotos, listSquadPhotos, setPhotoVisibility, deletePhoto, purgeExpiredPhotos, daysLeft, PHOTO_DAYS } from "./data/photos.js";
 import { libExercise, EXERCISE_LIBRARY, MUSCLE_GROUPS } from "./data/exerciseLibrary.js";
+import { FOOD_LIBRARY, FOOD_CATS, libFood, STARTER_MEALS } from "./data/foods.js";
+import { SUPP_LIBRARY, SUPP_CATS, libSupp, ESSENTIALS } from "./data/supplements.js";
+import { mealTotals, foodMacros, PORTIONS, portionLabel, suppAdherence } from "./core/nutrition.js";
 import { getCustomExercises, addCustomExercise } from "./data/customExercises.js";
 import { getCurrentSquad, setCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
@@ -73,7 +76,7 @@ export function initTracker() {
   const sessName = (id) => (id === "quick" ? "Quick session"
     : (!comboParts(id).every(k => sess(k)) && DB.names && DB.names["@" + id]) || comboParts(id).map(oneName).join(" + "));
   // the programme as stored (sessions + optional schedule + weekly goal)
-  const progData = (over = {}) => ({ sessions: P.sessions, cycle: P.cycle, ...(P.goal ? { goal: P.goal } : {}), ...over });
+  const progData = (over = {}) => ({ sessions: P.sessions, cycle: P.cycle, ...(P.goal ? { goal: P.goal } : {}), ...(P.nut ? { nut: P.nut } : {}), ...over });
   const hasSchedule = () => P.cycle.some(c => c.type === "train");
   const goalNow = () => weeklyGoal(P, Array.isArray(PROFILE?.training_days) ? PROFILE.training_days.length : undefined);
   // first upcoming calendar date (incl. today) whose cycle position == p
@@ -172,7 +175,7 @@ export function initTracker() {
   function go(tab, opts) {
     if (typeof clearNP === "function") clearNP();   // stop any now-playing ticker
     if (typeof flushAutosave === "function") flushAutosave();   // never lose typed sets on navigation
-    document.getElementById("axs")?.remove(); document.body.classList.remove("sheet-open", "kb-open");
+    document.getElementById("axs")?.remove(); document.getElementById("nsheet")?.remove(); document.body.classList.remove("sheet-open", "kb-open");
     TAB = tab; ACTIVE = (opts && opts.session) || ACTIVE;
     document.querySelectorAll(".tabbar button").forEach(b =>
       b.classList.toggle("active", b.dataset.tab === tab));
@@ -469,6 +472,18 @@ export function initTracker() {
   document.addEventListener("input", (e) => {
     if (e.target.closest && e.target.closest("#view .set-row")) { paintTrainProgress(); scheduleAutosave(); }
     if (e.target.id === "ax-q") axShow(e.target.value);
+    if (e.target.id === "ns-q") document.getElementById("nsheet")?._search?.(e.target.value);
+    if (e.target.id === "me-q") { const p = document.getElementById("me-pick"); if (p) p.innerHTML = mealPickHtml(e.target.value); }
+    if (e.target.classList?.contains("me-gin") && MEAL_DRAFT) {
+      const i = +e.target.dataset.i, it = MEAL_DRAFT.items[i], f = it && foodOf(it.key);
+      if (f) { it.g = Math.max(0, Number(e.target.value) || 0);
+        const mEl = document.getElementById("me-m-" + i); if (mEl) mEl.textContent = `${r0(foodMacros(f, it.g).kcal)} kcal · ${r0(foodMacros(f, it.g).protein)}g P`;
+        const tEl = document.getElementById("me-tot"); if (tEl) tEl.textContent = macroLine(mealTotals(MEAL_DRAFT.items, foodOf)); }
+    }
+    if (e.target.id === "fl-g" && LOG_DRAFT && LOG_DRAFT.foodKey) {
+      LOG_DRAFT.g = Math.max(0, Number(e.target.value) || 0);
+      const tEl = document.getElementById("fl-tot"); if (tEl) tEl.textContent = macroLine(foodMacros(foodOf(LOG_DRAFT.foodKey), LOG_DRAFT.g));
+    }
   });
   /* Keyboard handling (web app on iPhone): while you type, hide the floating tab
      bar / Finish button / rest bar so nothing jumps up over your inputs, and keep
@@ -1077,10 +1092,33 @@ export function initTracker() {
       const avgK = Math.round(mac.reduce((a, m) => a + (m.kcal || 0), 0) / mac.length);
       const avgP = Math.round(mac.reduce((a, m) => a + (m.protein || 0), 0) / mac.length);
       const pHit = mac.filter(m => (m.protein || 0) >= t.protein).length;
-      L.push(`NUTRITION — ${mac.length}/7 days logged`);
-      L.push(`Avg calories: ${avgK} (target ${t.kcal})`);
+      const avgC = Math.round(mac.reduce((a, m) => a + (m.carbs || 0), 0) / mac.length);
+      const avgF = Math.round(mac.reduce((a, m) => a + (m.fats || 0), 0) / mac.length);
+      const kOn = mac.filter(m => Math.abs((m.kcal || 0) - t.kcal) <= t.kcal * 0.1).length;
+      L.push(`NUTRITION — ${mac.length}/7 days logged (estimates from logged meals)`);
+      L.push(`Avg calories: ${avgK} (target ${t.kcal}) · within ±10% on ${kOn}/${mac.length} days`);
       L.push(`Avg protein: ${avgP}g (target ${t.protein}) · hit on ${pHit}/${mac.length} days`);
+      L.push(`Avg carbs: ${avgC}g (target ${t.carbs}) · avg fats: ${avgF}g (target ${t.fats})`);
+      // what was eaten most — meal names logged this week
+      const counts = {};
+      mac.forEach(m => (m.meals || []).forEach(x => { const k = String(x.name || "").replace(/ \(.*\)$/, "").replace(/ \d+(\.\d+)?g$/, ""); if (k) counts[k] = (counts[k] || 0) + 1; }));
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      if (top.length) L.push(`Most eaten: ${top.map(([k, c]) => `${k} ×${c}`).join(", ")}`);
     } else L.push("NUTRITION — not logged this week");
+
+    // Supplements — consistency for the user's own stack
+    const stack = (P.nut && P.nut.supps) || [];
+    if (stack.length) {
+      const since = (P.nut && P.nut.suppSince) || {};
+      L.push("");
+      L.push("SUPPLEMENTS — days ticked off in the app this week");
+      stack.forEach(k => {
+        const x = suppOf(k); if (!x) return;
+        const win = days.filter(d => d <= today && (!since[k] || d >= since[k]));
+        const n = suppAdherence(DB.macros, win, [k])[k] || 0;
+        L.push(`${x.name} · ${x.dose} — ${n}/${win.length} day${win.length === 1 ? "" : "s"}`);
+      });
+    }
 
     // Auto flags
     const flags = [];
@@ -1090,7 +1128,7 @@ export function initTracker() {
     if (flags.length) { L.push(""); L.push("⚠️ FLAGS"); flags.forEach(f => L.push("• " + f)); }
 
     L.push("");
-    L.push("— Paste this into your coach chat to review the week —");
+    L.push("— Weekly review from NO LIMIT. Food numbers are estimates from logged meals. —");
     return L.join("\n");
   }
   /* ---------- per-exercise history (bottom sheet — never leaves an unsaved workout) ---------- */
@@ -1184,10 +1222,11 @@ export function initTracker() {
       <div class="modal-head"><b>Weekly Review</b><span class="mx" data-act="closemodal">✕</span></div>
       <textarea class="report" readonly>${esc(text)}</textarea>
       <div class="modal-actions">
-        <button class="btn sm" data-act="copyreport">Copy</button>
+        ${navigator.share ? `<button class="btn sm" data-act="sharereport">Share</button>` : ""}
+        <button class="btn sm${navigator.share ? " ghost" : ""}" data-act="copyreport">Copy</button>
         <button class="btn sm ghost" data-act="dlreport">Download .txt</button>
       </div>
-      <p class="modal-hint">Copy this and paste it into your chat — we'll review where you lacked and set next week's targets.</p>
+      <p class="modal-hint">Send it to your coach, trainer, doctor or an AI assistant — it covers training, bodyweight, food and supplements.</p>
     </div>`;
     ov._text = text;
     document.body.appendChild(ov);
@@ -1255,7 +1294,7 @@ export function initTracker() {
 
     // meals — log what you ate; each adds to today's totals above
     const meals = (DB.macros.find(x => x.date === today)?.meals) || [];
-    html += `<div class="subhead">Meals today</div><div class="card">`;
+    html += `<div class="subhead lb-head">Meals today <button class="lb-r" data-act="nlog">+ From my meals</button></div><div class="card">`;
     meals.forEach((ml, idx) => {
       html += `<div class="meal-row"><span class="meal-n">${esc(ml.name)}</span>
         <span class="meal-m">${ml.kcal} kcal · ${ml.protein}g P</span>
@@ -1285,65 +1324,248 @@ export function initTracker() {
     html += `</div>`;
 
     html += `<div class="note">Aim for a small daily surplus (~+250 kcal) with protein at the top of the range. Slow gain = lean gain.</div>`;
-    html += `<button class="linkbtn" data-act="gofuel" style="margin-top:12px">What should I eat today?
-      <small>Your daily meal template, shopping list &amp; macro reference.</small></button>`;
+    html += `<button class="linkbtn" data-act="gofuel" style="margin-top:12px">My meals, foods &amp; supplements
+      <small>Build meals once, log them in a tap, keep your shopping list.</small></button>`;
     view().innerHTML = html;
   }
 
   /* ---------- Daily fuel cheat-sheet (rendered inside Plan) ---------- */
-  function renderFuel() {
-    const f = P.fuel;
-    let h = `<div class="subhead">Daily fuel cheat-sheet</div>`;
+  /* ============================ PLAN — food, meals, supplements ============================
+     Everything here is the user's own: the foods they actually buy (pantry +
+     shopping list that carries over week to week), meals built from those
+     foods, and their supplement stack. Logging a meal at a portion writes to
+     today's food log, so the Log tab and the weekly report stay in step.
+     Stored in the private programme (P.nut); daily supplement ticks live on the
+     day's food log record (supps). */
+  const NUT = () => {
+    const n = (P.nut ||= {});
+    n.foods ||= []; n.custom ||= []; n.meals ||= []; n.supps ||= []; n.suppCustom ||= []; n.suppSince ||= {};
+    return n;
+  };
+  const foodOf = (k) => NUT().custom.find(f => f.key === k) || libFood(k);
+  const suppOf = (k) => NUT().suppCustom.find(x => x.key === k) || libSupp(k);
+  const hasFood = (k) => NUT().foods.some(f => f.key === k);
+  const r0 = (n) => Math.round(Number(n) || 0);
+  const macroLine = (m) => `${r0(m.kcal)} kcal · ${r0(m.protein)}g P · ${r0(m.carbs)}g C · ${r0(m.fats)}g F`;
+  const todayMacros = () => DB.macros.find(x => x.date === todayStr());
+  let NUT_TAB = "shop";
+  const SEARCH_ICON = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>';
 
-    // meal template
-    h += `<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-        <b style="font-size:14px">A day that hits your numbers</b>
-        <span style="color:var(--gold);font-size:12px;font-weight:700">${f.totalKcal} · ${f.totalProtein}</span></div>`;
-    f.meals.forEach(m => {
-      h += `<div class="fuel-meal">
-        <div class="fuel-m"><b>${esc(m.m)}</b> <span class="fuel-tag ${m.tag}">${m.tag}</span><div class="fuel-food">${esc(m.food)}</div></div>
-        <div class="fuel-macros">${m.kcal}<small>kcal</small><br>${m.p}<small>g P</small></div></div>`;
-    });
-    h += `<div class="note" style="margin-top:12px">${esc(f.note)}</div></div>`;
-
-    // grocery list
-    h += `<div class="subhead">Weekly shopping list</div><div class="card grocery">`;
-    Object.keys(f.groceries).forEach(cat => {
-      h += `<div class="gcat"><b>${esc(cat)}</b><div>` +
-        f.groceries[cat].map(x => `<span class="chip">${esc(x)}</span>`).join("") + `</div></div>`;
-    });
-    h += `</div>`;
-
-    // macro reference
-    h += `<div class="subhead">Macro reference · per portion</div><div class="card" style="padding:6px 0">
-      <table class="ref-tbl"><thead><tr><th>Food</th><th>Portion</th><th>kcal</th><th>Protein</th></tr></thead><tbody>` +
-      f.ref.map(r => `<tr><td>${esc(r[0])}</td><td class="mut">${esc(r[1])}</td><td class="mut">${r[2]}</td><td class="pp">${r[3]}g</td></tr>`).join("") +
-      `</tbody></table></div>`;
-    return h;
-  }
-
-  /* ============================ PLAN (reference + settings) ============================ */
   function renderPlan() {
     const t = getActiveTargets();
+    const n = NUT();
+    const mt = todayMacros() || {};
+    const pct = (v, tg) => (tg ? Math.min(100, Math.round((v || 0) / tg * 100)) : 0);
+    const taken = new Set(mt.supps || []);
     let html = `<div class="section-label">Your plan</div><h1 class="h-title">The Plan</h1>
-      <p class="h-sub">Fuel, supplements and the rules that make the training work.</p>`;
-    html += `<div class="subhead">Nutrition · your targets</div><div class="card"><ul class="clean">
-      <li><b>Calories:</b> ${t.kcal}</li>
-      <li><b>Protein:</b> ${t.protein} g</li>
-      <li><b>Carbs:</b> ${t.carbs} g · <b>Fats:</b> ${t.fats} g</li>
-      <li><b>Breakfast:</b> oats + whey + berries + peanut butter</li>
-      <li><b>Timing:</b> breakfast · lunch · post-workout shake · dinner</li></ul>
-      <button class="linkbtn" data-act="edittargets" style="margin:12px 0 0">Edit my targets</button></div>`;
-    html += renderFuel();
-    html += `<div class="subhead">Supplements</div><div class="card"><ul class="clean">` +
-      P.supplements.map(s => `<li><b>${esc(s[0])}</b> — ${esc(s[1])}, ${esc(s[2])}. ${esc(s[3])}.</li>`).join("") +
-      `</ul><div class="note">${esc(P.aminoNote)}</div></div>`;
-    html += `<div class="subhead">Warm-up · every session</div><div class="card"><ul class="clean">` +
-      P.warmup.map(w => `<li>${esc(w)}</li>`).join("") + `</ul></div>`;
-    html += `<div class="subhead">Training rules</div><div class="card"><ul class="clean">` +
-      P.rules.map(r => `<li>${esc(r)}</li>`).join("") + `</ul></div>`;
-    html += `<button class="linkbtn" data-act="settings" style="margin-top:6px">Settings<small>Weekly goal, schedule, Spotify, privacy, your data.</small></button>`;
+      <p class="h-sub">Your foods, your meals, your stack. Log what you eat in a tap.</p>`;
+
+    // Today — food vs targets + supplement check-offs
+    html += `<div class="card np-today">
+      <div class="np-row"><span><small>Today</small><b>${r0(mt.kcal)} <em>/ ${t.kcal} kcal</em></b></span>
+        <button class="tp-add" data-act="nlog">+ Log food</button></div>
+      <div class="bar ${(mt.kcal || 0) > t.kcal * 1.1 ? "over" : ""}"><i style="width:${pct(mt.kcal, t.kcal)}%"></i></div>
+      <div class="np-sub"><span>Protein ${r0(mt.protein)} / ${t.protein} g</span><span>Carbs ${r0(mt.carbs)} · Fats ${r0(mt.fats)}</span></div>
+      <div class="bar"><i style="width:${pct(mt.protein, t.protein)}%"></i></div>
+      ${n.supps.length ? `<div class="np-supps"><small>Supplements · ${n.supps.filter(k => taken.has(k)).length}/${n.supps.length} today</small>
+        <div class="np-chips">${n.supps.map(k => suppOf(k) ? `<button class="np-chip${taken.has(k) ? " on" : ""}" data-act="supptick" data-k="${esc(k)}">${taken.has(k) ? "✓ " : ""}${esc(suppOf(k).name.split(" (")[0])}</button>` : "").join("")}</div></div>` : ""}
+    </div>`;
+
+    // My meals
+    html += `<div class="subhead lb-head">My meals <button class="lb-r" data-act="mnew">+ New</button></div><div class="card nm-card">`;
+    if (!n.meals.length) {
+      html += `<div class="empty" style="padding:12px 4px">Build the meals you actually eat from your foods — set the grams once, then log them in a tap.</div>
+        <button class="btn ghost sm" data-act="mstarter">Start with 6 starter meals</button>`;
+    } else html += n.meals.map(m => {
+      const tt = mealTotals(m.items, foodOf);
+      return `<div class="nm-row"><button class="nm-l" data-act="medit" data-id="${esc(m.id)}"><b>${esc(m.name)}</b>
+          <small>${tt.kcal} kcal · ${tt.protein}g P · ${m.items.length} food${m.items.length === 1 ? "" : "s"}</small></button>
+        <button class="tp-add" data-act="mlog" data-id="${esc(m.id)}">Log</button></div>`;
+    }).join("");
+    html += `</div>`;
+
+    // Shopping list / My foods (carries over — nothing resets weekly)
+    const need = n.foods.filter(f => f.need && foodOf(f.key));
+    html += `<div class="subhead">Groceries</div><div class="card ng-card">
+      <div class="seg" style="margin-bottom:10px">
+        <button class="seg-b${NUT_TAB === "shop" ? " on" : ""}" data-act="ntab" data-v="shop">Shopping list${need.length ? ` (${need.length})` : ""}</button>
+        <button class="seg-b${NUT_TAB === "foods" ? " on" : ""}" data-act="ntab" data-v="foods">My foods (${n.foods.length})</button></div>`;
+    if (NUT_TAB === "shop") {
+      html += need.length ? need.map(f => `<button class="ng-row" data-act="gbought" data-k="${esc(f.key)}"><span class="ck-box"></span><span>${esc(foodOf(f.key).name)}</span></button>`).join("")
+          + `<p class="pl-note" style="margin:10px 2px 0">Tap when it's in the basket. Anything you still have stays in My foods for next week.</p>`
+        : `<div class="empty" style="padding:12px 4px">${n.foods.length ? "Nothing to buy. In My foods, tap Need on anything running low." : "Add the foods you usually buy, then mark what you need each week."}</div>`;
+      if (n.meals.length) html += `<button class="linkbtn" data-act="gmeals" style="margin:10px 0 0">Add everything my meals need<small>Marks every food in your meals as Need.</small></button>`;
+    } else {
+      html += n.foods.length ? n.foods.map(f => { const fd = foodOf(f.key); if (!fd) return "";
+          return `<div class="ng-food"><span><b>${esc(fd.name)}</b><small>${macroLine(foodMacros(fd, fd.portion)).split(" · ").slice(0, 2).join(" · ")} per ${fd.unit || fd.portion + "g"}</small></span>
+            <button class="ng-need${f.need ? " on" : ""}" data-act="gneed" data-k="${esc(f.key)}">${f.need ? "Need ✓" : "Need"}</button>
+            <button class="ex-rm" data-act="frm" data-k="${esc(f.key)}" aria-label="Remove">${XMARK}</button></div>`; }).join("")
+        : `<div class="empty" style="padding:12px 4px">Pick the foods you actually buy — it takes a minute.</div>`;
+      html += `<button class="linkbtn" data-act="fadd" style="margin:10px 0 0">+ Add foods<small>From the library, or your own from a label.</small></button>`;
+    }
+    html += `</div>`;
+
+    // Supplements
+    html += `<div class="subhead lb-head">My supplements <button class="lb-r" data-act="sadd">+ Add</button></div><div class="card">`;
+    html += n.supps.length ? n.supps.map(k => { const x = suppOf(k); if (!x) return "";
+        return `<div class="ng-food"><span><b>${esc(x.name)}</b><small>${esc(x.dose)} · ${esc(x.when)}</small></span>
+          <button class="ex-rm" data-act="srm" data-k="${esc(k)}" aria-label="Remove">${XMARK}</button></div>`; }).join("")
+      : `<div class="empty" style="padding:12px 4px">Choose what you take — tick them off each day on this page.</div>
+         <button class="btn ghost sm" data-act="sessentials">Start with the essentials (creatine, D3, omega-3)</button>`;
+    html += `<p class="pl-note" style="margin:10px 2px 0">General information, not medical advice — check with your GP if you take medication or have a condition.</p></div>`;
+
+    // Reference (collapsed)
+    html += `<div class="subhead">Reference</div>
+      <details class="card nref"><summary>Your targets <em>${t.kcal} kcal · ${t.protein}g P · ${t.carbs}g C · ${t.fats}g F</em></summary>
+        <button class="linkbtn" data-act="edittargets" style="margin:10px 0 0">Edit my targets</button></details>
+      <details class="card nref"><summary>Training rules</summary><ul class="clean">${P.rules.map(r => `<li>${esc(r)}</li>`).join("")}</ul></details>
+      <details class="card nref"><summary>Warm-up · every session</summary><ul class="clean">${P.warmup.map(w => `<li>${esc(w)}</li>`).join("")}</ul></details>
+      <button class="linkbtn" data-act="settings" style="margin-top:6px">Settings<small>Weekly goal, schedule, Spotify, privacy, your data.</small></button>`;
     view().innerHTML = html;
+  }
+
+  /* ---------- sheets ---------- */
+  function openSheet(title, body, opts = {}) {
+    closeSheet();
+    const ov = document.createElement("div"); ov.className = "axs nsheet"; ov.id = "nsheet";
+    ov.innerHTML = `<div class="axs-top"><b class="ns-title">${esc(title)}</b><button class="axs-x" data-act="nsclose">Done</button></div>
+      ${opts.search ? `<div class="ns-search"><div class="ax-in">${SEARCH_ICON}<input id="ns-q" type="search" placeholder="${esc(opts.search)}" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false"></div></div>` : ""}
+      <div class="axs-body" id="ns-body">${body}</div>`;
+    ov._search = opts.onSearch || null;
+    document.body.appendChild(ov);
+    document.body.classList.add("sheet-open");
+    return ov;
+  }
+  function closeSheet() {
+    document.getElementById("nsheet")?.remove();
+    if (!document.getElementById("axs")) document.body.classList.remove("sheet-open");
+  }
+  const nsBody = (html) => { const b = document.getElementById("ns-body"); if (b) b.innerHTML = html; };
+  const saveNut = () => saveProgrammeQuiet();
+
+  // food library — tick to add to My foods; add your own from a label
+  function foodSheetHtml(q = "") {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const match = (f) => !words.length || words.every(w => (f.name + " " + f.cat).toLowerCase().includes(w));
+    const row = (f) => `<button class="ns-row${hasFood(f.key) ? " on" : ""}" data-act="ftoggle" data-k="${esc(f.key)}">
+        <span><b>${esc(f.name)}</b><small>${r0(foodMacros(f, f.portion).kcal)} kcal · ${r0(foodMacros(f, f.portion).protein)}g P per ${esc(f.unit || f.portion + "g")}</small></span><i>${hasFood(f.key) ? "✓" : "+"}</i></button>`;
+    let h = "";
+    const mine = NUT().custom.filter(match);
+    if (mine.length) h += `<div class="ax-h">Your own foods</div>` + mine.map(row).join("");
+    FOOD_CATS.forEach(c => { const items = FOOD_LIBRARY.filter(f => f.cat === c && match(f)); if (items.length) h += `<div class="ax-h">${esc(c)}</div>` + items.map(row).join(""); });
+    if (!h) h = `<div class="ax-h">No match in the library</div>`;
+    h += `<div class="axn glass" style="margin-top:14px"><small>Not here?</small><b>Add your own from the label</b>
+      <input class="inp cf-in" id="cf-name" placeholder="Name (e.g. Tesco chicken wrap)" value="${esc(q && !FOOD_LIBRARY.some(match) ? q : "")}" autocapitalize="words">
+      <div class="cf-grid"><label>kcal<input id="cf-kcal" type="number" inputmode="decimal" placeholder="per 100g"></label>
+        <label>Protein<input id="cf-p" type="number" inputmode="decimal" placeholder="g"></label>
+        <label>Carbs<input id="cf-c" type="number" inputmode="decimal" placeholder="g"></label>
+        <label>Fat<input id="cf-f" type="number" inputmode="decimal" placeholder="g"></label></div>
+      <label class="cf-portion">Usual portion <input id="cf-portion" type="number" inputmode="numeric" value="100"> g</label>
+      <p class="pl-note" style="margin:6px 0 10px">Use the "per 100g" column on the packet.</p>
+      <button class="btn" data-act="fcustomsave">Add to my foods</button></div>`;
+    return h;
+  }
+  function openFoodSheet() {
+    openSheet("Add foods", foodSheetHtml(), { search: "Search foods…", onSearch: (q) => nsBody(foodSheetHtml(q)) });
+  }
+
+  // meal editor
+  let MEAL_DRAFT = null;
+  function mealPickHtml(q = "") {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const match = (f) => !words.length || words.every(w => f.name.toLowerCase().includes(w));
+    const mine = NUT().foods.map(f => foodOf(f.key)).filter(Boolean).filter(match);
+    const lib = words.length ? FOOD_LIBRARY.filter(f => match(f) && !hasFood(f.key)).slice(0, 15) : [];
+    const row = (f) => `<button class="ax-row" data-act="meadd" data-k="${esc(f.key)}"><span><b>${esc(f.name)}</b><small>${esc(f.unit || f.portion + "g")} · ${r0(foodMacros(f, f.portion).kcal)} kcal</small></span><i>+</i></button>`;
+    return (mine.length ? `<div class="ax-h">My foods</div>` + mine.map(row).join("") : "")
+      + (lib.length ? `<div class="ax-h">Library</div>` + lib.map(row).join("") : "")
+      + (!mine.length && !lib.length ? `<div class="ax-h">${words.length ? "No match — add it in My foods first" : "Search any food"}</div>` : "");
+  }
+  function mealSheetHtml() {
+    const d = MEAL_DRAFT, tt = mealTotals(d.items, foodOf);
+    return `<input class="inp me-name" id="me-name" value="${esc(d.name)}" placeholder="Meal name (e.g. Chicken & rice)" autocapitalize="words">
+      <div class="me-items">${d.items.map((it, i) => { const f = foodOf(it.key); if (!f) return "";
+        return `<div class="me-row"><span><b>${esc(f.name)}</b><small id="me-m-${i}">${r0(foodMacros(f, it.g).kcal)} kcal · ${r0(foodMacros(f, it.g).protein)}g P</small></span>
+          <label class="me-g"><input type="number" inputmode="decimal" data-i="${i}" class="me-gin" value="${it.g}"> g</label>
+          <button class="ex-rm" data-act="merm" data-i="${i}" aria-label="Remove">${XMARK}</button></div>`; }).join("") || `<div class="ax-h">Add the foods in this meal ↓</div>`}</div>
+      <div class="me-tot glass" id="me-tot">${macroLine(tt)}</div>
+      <div class="ax-in me-search">${SEARCH_ICON}<input id="me-q" type="search" placeholder="Add a food…" autocapitalize="none" autocomplete="off"></div>
+      <div id="me-pick">${mealPickHtml()}</div>
+      <button class="btn" data-act="mesave" style="margin-top:14px">Save meal</button>
+      ${NUT().meals.some(m => m.id === d.id) ? `<button class="btn ghost" data-act="medel" style="margin-top:10px;color:#FF8A80">Delete meal</button>` : ""}`;
+  }
+  function openMealEditor(id) {
+    const m = NUT().meals.find(x => x.id === id);
+    MEAL_DRAFT = m ? JSON.parse(JSON.stringify(m)) : { id: "m-" + Date.now().toString(36), name: "", items: [] };
+    openSheet(m ? "Edit meal" : "New meal", mealSheetHtml());
+  }
+
+  // log a meal at a portion, or a single food by grams
+  let LOG_DRAFT = null;
+  function logSheetHtml() {
+    const d = LOG_DRAFT;
+    if (d.mealId) {
+      const m = NUT().meals.find(x => x.id === d.mealId); if (!m) return "";
+      const tt = mealTotals(m.items, foodOf, d.portion);
+      return `<div class="nl-name">${esc(m.name)}</div><small class="pl-note">How much did you have?</small>
+        <div class="nl-por">${PORTIONS.map(p => `<button class="axn-c${p === d.portion ? " on" : ""}" data-act="lgportion" data-p="${p}">${portionLabel(p)}</button>`).join("")}</div>
+        <div class="me-tot glass">${macroLine(tt)}</div>
+        <button class="btn" data-act="lggo">Log to today</button>`;
+    }
+    const f = foodOf(d.foodKey); if (!f) return "";
+    return `<div class="nl-name">${esc(f.name)}</div>
+      <label class="me-g nl-g"><input type="number" inputmode="decimal" id="fl-g" value="${d.g}"> g</label>
+      <div class="nl-por">${[0.5, 1, 1.5, 2].map(k => `<button class="axn-c" data-act="lgfg" data-g="${Math.round(f.portion * k)}">${f.unit && k === 1 ? esc(f.unit) : Math.round(f.portion * k) + "g"}</button>`).join("")}</div>
+      <div class="me-tot glass" id="fl-tot">${macroLine(foodMacros(f, d.g))}</div>
+      <button class="btn" data-act="lggo">Log to today</button>`;
+  }
+  function quickLogHtml(q = "") {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const match = (name) => !words.length || words.every(w => name.toLowerCase().includes(w));
+    const meals = NUT().meals.filter(m => match(m.name));
+    const mine = NUT().foods.map(f => foodOf(f.key)).filter(f => f && match(f.name));
+    const lib = words.length ? FOOD_LIBRARY.filter(f => match(f.name) && !hasFood(f.key)).slice(0, 12) : [];
+    const frow = (f) => `<button class="ax-row" data-act="lgfood" data-k="${esc(f.key)}"><span><b>${esc(f.name)}</b><small>${esc(f.unit || f.portion + "g")} · ${r0(foodMacros(f, f.portion).kcal)} kcal</small></span><i>+</i></button>`;
+    return (meals.length ? `<div class="ax-h">My meals</div>` + meals.map(m => { const tt = mealTotals(m.items, foodOf);
+        return `<button class="ax-row" data-act="mlog" data-id="${esc(m.id)}"><span><b>${esc(m.name)}</b><small>${tt.kcal} kcal · ${tt.protein}g P</small></span><i>+</i></button>`; }).join("") : "")
+      + (mine.length ? `<div class="ax-h">My foods</div>` + mine.map(frow).join("") : "")
+      + (lib.length ? `<div class="ax-h">Library</div>` + lib.map(frow).join("") : "")
+      + (!meals.length && !mine.length && !lib.length ? `<div class="ax-h">${words.length ? "No match" : "Search any food, or build meals on the Plan page"}</div>` : "");
+  }
+  function logToToday(name, mc) {
+    const t = todayStr(); let m = DB.macros.find(x => x.date === t);
+    if (!m) { m = { date: t, kcal: 0, protein: 0, carbs: 0, fats: 0 }; DB.macros.push(m); }
+    const ml = { name, kcal: r0(mc.kcal), protein: r0(mc.protein), carbs: r0(mc.carbs), fats: r0(mc.fats) };
+    (m.meals ||= []).push(ml);
+    m.kcal = (m.kcal || 0) + ml.kcal; m.protein = (m.protein || 0) + ml.protein;
+    m.carbs = (m.carbs || 0) + ml.carbs; m.fats = (m.fats || 0) + ml.fats;
+    DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1));
+    saveAndSync("macro", m, `Logged ${name} · ${ml.kcal} kcal`);
+  }
+  function toggleSupp(k) {
+    const t = todayStr(); let m = DB.macros.find(x => x.date === t);
+    if (!m) { m = { date: t, kcal: 0, protein: 0, carbs: 0, fats: 0 }; DB.macros.push(m); DB.macros.sort((a, b) => (a.date < b.date ? -1 : 1)); }
+    const set = new Set(m.supps || []);
+    set.has(k) ? set.delete(k) : set.add(k);
+    m.supps = [...set];
+    markDirty(m);
+    pushRecord("macro", m);
+  }
+
+  // supplement library — tick to add to your stack; add your own
+  function suppSheetHtml() {
+    const n = NUT();
+    const row = (x) => `<button class="ns-row${n.supps.includes(x.key) ? " on" : ""}" data-act="stoggle" data-k="${esc(x.key)}">
+        <span><b>${esc(x.name)}</b><small>${esc(x.dose)} · ${esc(x.when)}</small><small class="ns-why">${esc(x.why || "")}</small></span><i>${n.supps.includes(x.key) ? "✓" : "+"}</i></button>`;
+    let h = n.suppCustom.length ? `<div class="ax-h">Your own</div>` + n.suppCustom.map(row).join("") : "";
+    SUPP_CATS.forEach(c => { h += `<div class="ax-h">${esc(c)}</div>` + SUPP_LIBRARY.filter(x => x.cat === c).map(row).join(""); });
+    h += `<div class="axn glass" style="margin-top:14px"><small>Not listed?</small><b>Add your own</b>
+      <input class="inp cf-in" id="cs-name" placeholder="Name" autocapitalize="words">
+      <input class="inp cf-in" id="cs-dose" placeholder="Dose (e.g. 1 capsule)">
+      <input class="inp cf-in" id="cs-when" placeholder="When (e.g. with breakfast)">
+      <button class="btn" data-act="scustomsave">Add to my stack</button></div>
+      <p class="pl-note" style="margin:12px 4px">General information, not medical advice.</p>`;
+    return h;
   }
 
   /* ============================ SETTINGS ============================ */
@@ -1917,6 +2139,122 @@ export function initTracker() {
     else if (act === "finish") finishWorkout();
     else if (act === "gohome") go("today");
     else if (act === "settings") go("settings");
+    /* --- Plan: foods, meals, supplements --- */
+    else if (act === "nsclose") { closeSheet(); if (TAB === "plan") renderPlan(); else if (TAB === "log") renderLog(); }
+    else if (act === "ntab") { NUT_TAB = el.dataset.v; renderPlan(); }
+    else if (act === "fadd") openFoodSheet();
+    else if (act === "ftoggle") {
+      const n = NUT(), k = el.dataset.k;
+      n.foods = hasFood(k) ? n.foods.filter(f => f.key !== k) : [...n.foods, { key: k, need: false }];
+      el.classList.toggle("on", hasFood(k)); el.querySelector("i").textContent = hasFood(k) ? "✓" : "+";
+      saveNut();
+    }
+    else if (act === "fcustomsave") {
+      const v = (id) => document.getElementById(id)?.value || "";
+      const num = (id) => Math.max(0, parseFloat(v(id)) || 0);
+      const name = v("cf-name").trim().replace(/\s+/g, " ");
+      if (!name) { toast("Give it a name"); return; }
+      if (!num("cf-kcal") && !num("cf-p")) { toast("Add at least the calories per 100g"); return; }
+      const f = { key: "cf-" + Date.now().toString(36), name, cat: "Yours", kcal: num("cf-kcal"), p: num("cf-p"), c: num("cf-c"), f: num("cf-f"), portion: Math.max(1, num("cf-portion") || 100) };
+      const n = NUT(); n.custom.push(f); n.foods.push({ key: f.key, need: false });
+      saveNut(); toast(`Added ${name}`); nsBody(foodSheetHtml());
+    }
+    else if (act === "frm") { const n = NUT(); n.foods = n.foods.filter(f => f.key !== el.dataset.k); saveNut(); renderPlan(); }
+    else if (act === "gneed") { const f = NUT().foods.find(x => x.key === el.dataset.k); if (f) { f.need = !f.need; saveNut(); renderPlan(); } }
+    else if (act === "gbought") {
+      const f = NUT().foods.find(x => x.key === el.dataset.k); if (!f) return;
+      f.need = false; saveNut();
+      el.classList.add("got"); setTimeout(() => renderPlan(), 260);
+    }
+    else if (act === "gmeals") {
+      const n = NUT(); let added = 0;
+      n.meals.forEach(m => m.items.forEach(it => {
+        let f = n.foods.find(x => x.key === it.key);
+        if (!f) { f = { key: it.key, need: false }; n.foods.push(f); }
+        if (!f.need) { f.need = true; added++; }
+      }));
+      saveNut(); NUT_TAB = "shop"; renderPlan(); toast(added ? `${added} item${added === 1 ? "" : "s"} added to your list` : "Already on your list");
+    }
+    else if (act === "mnew") openMealEditor(null);
+    else if (act === "medit") openMealEditor(el.dataset.id);
+    else if (act === "meadd") {
+      const f = foodOf(el.dataset.k); if (!f) return;
+      MEAL_DRAFT.name = document.getElementById("me-name")?.value || MEAL_DRAFT.name;
+      MEAL_DRAFT.items.push({ key: f.key, g: f.portion });
+      if (!hasFood(f.key)) NUT().foods.push({ key: f.key, need: false });   // a meal's foods belong in My foods
+      nsBody(mealSheetHtml());
+    }
+    else if (act === "merm") { MEAL_DRAFT.name = document.getElementById("me-name")?.value || MEAL_DRAFT.name; MEAL_DRAFT.items.splice(+el.dataset.i, 1); nsBody(mealSheetHtml()); }
+    else if (act === "mesave") {
+      const d = MEAL_DRAFT; d.name = (document.getElementById("me-name")?.value || "").trim();
+      if (!d.name) { toast("Name your meal"); return; }
+      if (!d.items.length) { toast("Add at least one food"); return; }
+      const n = NUT(), i = n.meals.findIndex(m => m.id === d.id);
+      if (i >= 0) n.meals[i] = d; else n.meals.push(d);
+      saveNut(); closeSheet(); renderPlan(); toast("Meal saved");
+    }
+    else if (act === "medel") {
+      if (!confirm("Delete this meal? Anything you've already logged stays in your log.")) return;
+      const n = NUT(); n.meals = n.meals.filter(m => m.id !== MEAL_DRAFT.id);
+      saveNut(); closeSheet(); renderPlan();
+    }
+    else if (act === "mstarter") {
+      const n = NUT();
+      STARTER_MEALS.forEach((m, i) => {
+        n.meals.push({ id: "m-" + Date.now().toString(36) + i, name: m.name, items: m.items.map(([key, g]) => ({ key, g })) });
+        m.items.forEach(([key]) => { if (!hasFood(key)) n.foods.push({ key, need: false }); });
+      });
+      saveNut(); renderPlan(); toast("6 meals added — edit the grams to match how you eat");
+    }
+    else if (act === "mlog") {
+      LOG_DRAFT = { mealId: el.dataset.id, portion: 1 };
+      openSheet("Log a meal", logSheetHtml());
+    }
+    else if (act === "lgfood") {
+      const f = foodOf(el.dataset.k); if (!f) return;
+      LOG_DRAFT = { foodKey: f.key, g: f.portion };
+      openSheet("Log a food", logSheetHtml());
+    }
+    else if (act === "lgportion") { LOG_DRAFT.portion = Number(el.dataset.p); nsBody(logSheetHtml()); }
+    else if (act === "lgfg") { LOG_DRAFT.g = Number(el.dataset.g); nsBody(logSheetHtml()); }
+    else if (act === "lggo") {
+      const d = LOG_DRAFT;
+      if (d.mealId) {
+        const m = NUT().meals.find(x => x.id === d.mealId); if (!m) return;
+        logToToday(d.portion === 1 ? m.name : `${m.name} (${portionLabel(d.portion)})`, mealTotals(m.items, foodOf, d.portion));
+      } else {
+        const f = foodOf(d.foodKey); const g = Math.max(0, Number(document.getElementById("fl-g")?.value) || d.g);
+        if (!f || !g) return;
+        logToToday(`${f.name.split(" (")[0]} ${g}g`, foodMacros(f, g));
+      }
+      closeSheet();
+      if (TAB === "plan") renderPlan(); else if (TAB === "log") renderLog();
+    }
+    else if (act === "nlog") openSheet("Log food", quickLogHtml(), { search: "Search meals and foods…", onSearch: (q) => nsBody(quickLogHtml(q)) });
+    else if (act === "supptick") {
+      toggleSupp(el.dataset.k);
+      const on = (todayMacros()?.supps || []).includes(el.dataset.k);
+      el.classList.toggle("on", on);
+      el.textContent = (on ? "✓ " : "") + suppOf(el.dataset.k).name.split(" (")[0];
+      const lbl = el.closest(".np-supps")?.querySelector("small");
+      if (lbl) lbl.textContent = `Supplements · ${NUT().supps.filter(k => (todayMacros()?.supps || []).includes(k)).length}/${NUT().supps.length} today`;
+    }
+    else if (act === "sadd") openSheet("Supplements", suppSheetHtml());
+    else if (act === "stoggle") {
+      const n = NUT(), k = el.dataset.k;
+      if (n.supps.includes(k)) n.supps = n.supps.filter(x => x !== k);
+      else { n.supps = [...n.supps, k]; n.suppSince[k] = todayStr(); }
+      saveNut(); nsBody(suppSheetHtml());
+    }
+    else if (act === "scustomsave") {
+      const v = (id) => (document.getElementById(id)?.value || "").trim();
+      if (!v("cs-name")) { toast("Give it a name"); return; }
+      const x = { key: "cs-" + Date.now().toString(36), name: v("cs-name"), dose: v("cs-dose") || "As labelled", when: v("cs-when") || "Daily", why: "" };
+      const n = NUT(); n.suppCustom.push(x); n.supps.push(x.key); n.suppSince[x.key] = todayStr();
+      saveNut(); nsBody(suppSheetHtml()); toast(`Added ${x.name}`);
+    }
+    else if (act === "srm") { const n = NUT(); n.supps = n.supps.filter(k => k !== el.dataset.k); saveNut(); renderPlan(); }
+    else if (act === "sessentials") { const n = NUT(); ESSENTIALS.forEach(k => { if (!n.supps.includes(k)) { n.supps.push(k); n.suppSince[k] = todayStr(); } }); saveNut(); renderPlan(); }
     else if (act === "photoadd") document.getElementById("photo-file")?.click();
     else if (act === "photoview") openPhotoViewer(el.dataset.src, el.dataset.id);
     else if (act === "phopt") el.parentElement.querySelectorAll(".seg-b").forEach(b => b.classList.toggle("on", b === el));
@@ -2044,6 +2382,10 @@ export function initTracker() {
     else if (act === "hideinstall") { DB.settings.hideInstall = true; save(); renderToday(); }
     else if (act === "weekly") { showReport(); }
     else if (act === "closemodal") { const m = el.closest(".modal"); if (m) m.remove(); }
+    else if (act === "sharereport") {
+      const text = el.closest(".modal")?._text || weeklyReport();
+      navigator.share({ title: "My week — NO LIMIT", text }).catch(() => {});
+    }
     else if (act === "copyreport") {
       const m = el.closest(".modal"); const txt = m ? m._text : "";
       const done = () => toast("Copied — paste it in your chat");
@@ -2056,14 +2398,7 @@ export function initTracker() {
       download("weekly-review-" + todayStr() + ".txt", m ? m._text : "", "text/plain");
       toast("Downloaded");
     }
-    else if (act === "gofuel") {
-      go("plan");
-      setTimeout(() => {
-        const heads = [...document.querySelectorAll(".subhead")];
-        const target = heads.find(h => h.textContent.indexOf("Daily fuel") === 0);
-        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 60);
-    }
+    else if (act === "gofuel") go("plan");
     else if (act === "logout") {
       if (confirm("Log out of No Limit?")) signOut().then(() => location.reload());
     }

@@ -77,3 +77,9 @@ test("an in-progress / finished workout keeps its state through a cloud merge", 
   // a workout only the cloud knows about (another device / older version) counts as finished
   assert.equal(mergeDB({ logs: [] }, cloud).logs[0].done, undefined);
 });
+
+test("supplement ticks survive a merge with a cloud copy that predates them", () => {
+  const cloud = { macros: [{ date: "2026-10-15", kcal: 2000, protein: 150, carbs: 200, fats: 60 }] };
+  const merged = mergeDB({ macros: [{ ...cloud.macros[0], synced: true, supps: ["creatine"] }] }, cloud);
+  assert.deepEqual(merged.macros[0].supps, ["creatine"]);
+});

@@ -21,7 +21,7 @@ export function setActiveProgramme(p) {
 export function getActiveProgramme() {
   if (!active) return PLAN;
   // user's structure + shared reference content from the default plan
-  return { ...PLAN, sessions: active.sessions, cycle: active.cycle, goal: active.goal };
+  return { ...PLAN, sessions: active.sessions, cycle: active.cycle, goal: active.goal, nut: active.nut };
 }
 
 export function exMeta(key) {

@@ -86,3 +86,10 @@ test("an exercise picked in a combined workout is remembered under the right ses
   assert.equal(homeSessionFor(prog, ["chest", "push"], "arnold-press", "Shoulders"), "push");
   assert.equal(homeSessionFor(prog, ["chest", "triceps"], "plank", "Core"), "chest");
 });
+
+test("the food/meal/supplement plan (nut) survives sanitising a loaded programme", () => {
+  const nut = { foods: [{ key: "oats", need: true }], meals: [{ id: "m1", name: "Oats", items: [{ key: "oats", g: 80 }] }], supps: ["creatine"], suppSince: { creatine: "2026-10-15" } };
+  const { programme, changed } = sanitizeProgramme({ sessions: {}, cycle: REST7, goal: 3, nut });
+  assert.equal(changed, false);
+  assert.deepEqual(programme.nut, nut);
+});
