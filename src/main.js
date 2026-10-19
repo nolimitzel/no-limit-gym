@@ -5,6 +5,7 @@
    saved on this device but not yet synced survives the launch and is re-pushed
    (AUDIT C1). A one-time migration lifts pre-2.0 local data into the first
    account that logs in on this device. Cloud failures never block the app. */
+import "./dev/simOffline.js";                             // dev-only offline test switch (no-op in production)
 import "./styles.css";
 import { initTracker } from "./app.js";
 import { supabase, isRecoveryLink } from "./data/supabaseClient.js";

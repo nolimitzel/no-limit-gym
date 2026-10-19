@@ -1,16 +1,47 @@
 /* Supabase auth wrappers + a cached session for synchronous reads in render code. */
 import { supabase } from "../data/supabaseClient.js";
 
-let _session = null;
-// Keep the cached session live across sign-in / sign-up / sign-out / token refresh,
-// so cachedUser() is correct immediately (not just after a page reload).
-if (supabase) supabase.auth.onAuthStateChange((_e, session) => { _session = session; });
+import { offlineBootSession } from "../core/boot.js";
 
+let _session = null;
+let _offline = false;   // booted from the stored session because the network was down
+// Keep the cached session live across sign-in / sign-up / sign-out / token refresh,
+// so cachedUser() is correct immediately (not just after a page reload). While
+// booted offline, a "no session yet" event must not wipe the user out — that would
+// point the app at an empty cache; only a real sign-out or a fresh session counts.
+if (supabase) supabase.auth.onAuthStateChange((event, session) => {
+  if (!session && _offline && event !== "SIGNED_OUT") return;
+  _session = session;
+  if (session) _offline = false;
+});
+
+// the signed-in session as the auth client stored it on this device
+function storedSession() {
+  try {
+    const key = supabase.auth.storageKey;
+    const s = JSON.parse(localStorage.getItem(key) || "null");
+    if (s && !s.user) {                                      // newer clients may keep the user separately
+      const u = JSON.parse(localStorage.getItem(key + "-user") || "null");
+      if (u) s.user = u.user || u;
+    }
+    return s;
+  } catch { return null; }
+}
+
+/* Offline relaunch fix: with no signal and an expired access token, the client
+   can't refresh and reports no session. Boot from the stored one instead so the
+   user's on-device workouts stay usable; it's refreshed once the network is back
+   (core/boot.js has the rules, incl. never resurrecting a revoked session). */
 export async function getSession() {
-  const { data } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getSession();
   _session = data.session;
+  if (!_session) {
+    const s = offlineBootSession({ session: null, error, stored: storedSession(), online: navigator.onLine });
+    if (s) { _session = s; _offline = true; console.warn("[NO LIMIT] offline — opening with the session saved on this device."); }
+  }
   return _session;
 }
+export const isOfflineSession = () => _offline;
 export function cachedUser() { return _session?.user || null; }
 
 export async function signUp({ email, password, name, username }) {
