@@ -15,11 +15,18 @@ let _uid = null;
 function writeLocal() {
   try { localStorage.setItem(LKEY(_uid), JSON.stringify({ v: 2, data: active, pending })); } catch {}
 }
-function push() {
+// keep whichever "workouts sharing back on since" moment is newest (another device may
+// have turned sharing off and on again since this device's change was made)
+const newest = (a, b) => (!a ? b : !b ? a : (a > b ? a : b));
+async function push() {
   if (!supabase || !_uid) return;
-  supabase.from("profiles").update({ privacy: active }).eq("id", _uid)
-    .then(({ error }) => { if (!error) { pending = false; writeLocal(); } })   // missing column → stays pending
-    .catch(() => {});
+  try {
+    const { data: cur } = await supabase.rpc("get_my_profile");
+    const since = newest(active.workoutsOnSince, cur && cur.privacy && cur.privacy.workoutsOnSince);
+    if (since) active = { ...active, workoutsOnSince: since };
+    const { error } = await supabase.from("profiles").update({ privacy: active }).eq("id", _uid);
+    if (!error) { pending = false; writeLocal(); }                         // missing column → stays pending
+  } catch {}
 }
 
 export function loadPrivacy(userId) {

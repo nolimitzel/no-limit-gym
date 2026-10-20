@@ -147,6 +147,7 @@ export function initTracker() {
      privacy record, so every device agrees. When unsure, keep it private. */
   function sharedLog(l) {
     if (l.share === false) return false;
+    if (l.share === true) return true;           // logged on this device while sharing was on
     const since = getPrivacy().workoutsOnSince;
     if (!since) return true;
     const sinceDay = ymd(new Date(since));

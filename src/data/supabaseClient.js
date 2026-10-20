@@ -11,7 +11,8 @@ export const isRecoveryLink = typeof location !== "undefined" &&
   /(^|[#&?])type=recovery(&|$)/.test(location.hash + "&" + location.search);
 // any email/OAuth link the client must finish over the network (sign-up confirm, magic link, reset)
 export const isAuthCallback = typeof location !== "undefined" &&
-  /(^|[#&?])(access_token|refresh_token|code|type|error_description)=/.test(location.hash + "&" + location.search);
+  /(^|[#&?])(access_token|refresh_token|code|type|error_description)=/.test(location.hash + "&" + location.search) &&
+  !/[?&]state=nls-/.test(location.search);                 // our Spotify return (?code=…&state=nls-…) isn't one
 
 export const supabase = url && anon
   ? createClient(url, anon, {

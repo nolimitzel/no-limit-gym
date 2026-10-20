@@ -15,7 +15,7 @@ if (supabase) supabase.auth.onAuthStateChange((event, session) => {
   // once the app is open, a different account or a server-side sign-out must
   // restart it — never keep running one account's cache under another
   if (_bootedUid && ((session && session.user?.id !== _bootedUid) || (!session && event === "SIGNED_OUT"))) {
-    _session = session; location.reload(); return;
+    _session = null; location.reload(); return;       // nothing may write under either account meanwhile
   }
   _session = session;
   if (session) { _offline = false; if (!_bootedUid) _bootedUid = session.user?.id || null; }
@@ -78,15 +78,15 @@ export async function signIn({ email, password }) {
 export async function signOut() {
   // Offline with an expired token the client refuses to sign out (it can't load the
   // session) and leaves it in storage — which the offline boot would then reopen.
-  // Always clear this device's copy first so sign-out means signed out — then tell the
-  // server, but never wait more than 3 s for it (offline it would retry for ~25 s).
+  // Tell the server first (revokes the session everywhere) but never wait more than 3 s
+  // for it — offline it would retry for ~25 s — then always clear this device's copy.
   _bootedUid = null;
+  await Promise.race([supabase.auth.signOut().catch(() => {}), new Promise(r => setTimeout(r, 3000))]);
   try {
     const key = supabase.auth.storageKey;
     localStorage.removeItem(key); localStorage.removeItem(key + "-user"); localStorage.removeItem(key + "-code-verifier");
   } catch {}
   _session = null; _offline = false;
-  await Promise.race([supabase.auth.signOut().catch(() => {}), new Promise(r => setTimeout(r, 3000))]);
 }
 export async function resetPassword(email) {
   return supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
