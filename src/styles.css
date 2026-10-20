@@ -1056,3 +1056,30 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .ob .auth-note{border-radius:12px}
 .ob #ob-go{margin-top:8px;width:100%;background:var(--brand);color:#0A0B0A;
   box-shadow:0 10px 28px rgba(204,255,0,.18),0 10px 24px rgba(0,0,0,.5)}
+
+/* ---- soundtrack: playlist covers + in-app Spotify player ---- */
+.hm2-art.has-cover,.mus-cover.has-cover,.pl-cover.has-cover{background:none;border-color:transparent;padding:0;overflow:hidden}
+.hm2-art img,.mus-cover img,.pl-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.mus-row{width:100%;background:none;text-align:left;font:inherit}
+.mus-cover{width:44px;height:44px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.mus-cover .sq-av{margin:0}
+.mus-play{color:var(--ink)}
+.pl-cur{display:flex;align-items:center;gap:10px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.pl-cur-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left;color:var(--ink)}
+.pl-cover{width:56px;height:56px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:var(--glass2);border:1px solid var(--glass-brd);color:var(--muted)}
+.pl-meta{flex:1;min-width:0}
+.pl-meta small{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.pl-meta b{display:block;font-size:15px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-remove{flex-shrink:0}
+.pl-link{margin-top:14px}
+.pl-link summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:600;list-style:none;padding:4px 0}
+.pl-link summary::-webkit-details-marker{display:none}
+.pl-link summary::after{content:" ›";display:inline-block;transition:transform .15s ease}
+.pl-link[open] summary{margin-bottom:10px}
+.pl-link[open] summary::after{transform:rotate(90deg)}
+.pl-embed{position:relative;border-radius:16px;overflow:hidden;background:rgba(0,0,0,.28);margin:8px 4px 0}
+.pl-embed::before{content:"Loading player…";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px}
+.pl-embed iframe{position:relative;display:block;width:100%;height:min(460px,60vh);border:0}
+.pl-open{display:block;margin:12px 4px 0;text-align:center;text-decoration:none}
+#soundtrack{scroll-margin-top:96px}

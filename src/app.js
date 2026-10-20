@@ -24,6 +24,8 @@ import { getCurrentSquad, setCurrentSquad, postActivity, getMyWorkoutPosts, getF
 import { getPrivacy, setPrivacy, applyCloudPrivacy } from "./data/privacy.js";
 import { getMyCommitment, setCommitment, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
 import { getMusic, setMusic, safeMusicUrl } from "./data/music.js";
+import { spotifyLink } from "./core/playlist.js";
+import { playlistMeta } from "./data/playlistMeta.js";
 import { spotifyConfigured, connectSpotify, isSpotifyConnected, disconnectSpotify, getSpotifyPlaylists, getNowPlaying, canControlPlayback, playPlaylist, spotifyPlaylistUri } from "./data/spotify.js";
 
 let _booted = false;
@@ -276,12 +278,37 @@ export function initTracker() {
   function homeMusicCard() {
     const mus = getMusic();
     const url = mus.url ? (safeMusicUrl(mus.url) || "#") : null;
-    const inner = `<span class="hm2-art">${ICON.note}</span>
-      <span class="hm2-meta"><small>${url ? "Soundtrack" : "Music"}</small><b>${esc(url ? (mus.label || "Training playlist") : "Set your training soundtrack")}</b></span>
+    const inner = `<span class="hm2-art"${url ? plCover(url) : ""}>${ICON.note}</span>
+      <span class="hm2-meta"><small>${url ? "Soundtrack" : "Music"}</small><b${url ? plTitle(url, mus.label) : ""}>${esc(url ? (mus.label || "Training playlist") : "Set your training soundtrack")}</b></span>
       <span class="hm2-go">${url ? ICON.play : ICON.chev}</span>`;
-    return url
-      ? `<a class="h2-music glass" id="home-music" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${inner}</a>`
-      : `<button class="h2-music glass" data-act="goplan">${inner}</button>`;
+    if (!url) return `<button class="h2-music glass" data-act="gomusic">${inner}</button>`;
+    return spotifyLink(url)
+      ? `<button class="h2-music glass" id="home-music" data-act="plopen" data-url="${esc(url)}">${inner}</button>`
+      : `<a class="h2-music glass" id="home-music" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+  }
+  /* ---- playlist covers + in-app player (Spotify links; others open as before) ---- */
+  // markup hooks filled in by hydratePlaylists once the cover/name has loaded
+  const plCover = (url) => spotifyLink(url) ? ` data-plcover="${esc(url)}"` : "";
+  const plTitle = (url, label) => spotifyLink(url) && !label ? ` data-pltitle="${esc(url)}"` : "";
+  function hydratePlaylists(root) {
+    root.querySelectorAll("[data-plcover]").forEach(el => playlistMeta(el.dataset.plcover).then(m => {
+      if (m?.image && el.isConnected) { el.innerHTML = `<img src="${esc(m.image)}" alt="" loading="lazy">`; el.classList.add("has-cover"); }
+    }));
+    root.querySelectorAll("[data-pltitle]").forEach(el => playlistMeta(el.dataset.pltitle).then(m => {
+      if (m?.title && el.isConnected) el.textContent = m.title;
+    }));
+  }
+  function openPlaylist(url) {
+    const sp = spotifyLink(url);
+    if (!sp) { const safe = safeMusicUrl(url); if (safe) window.open(safe, "_blank", "noopener"); return; }
+    const player = navigator.onLine
+      ? `<div class="pl-embed"><iframe src="${esc(sp.embed)}" title="Spotify player" loading="lazy"
+           allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe></div>`
+      : `<div class="empty" style="padding:22px">You're offline — the player needs a connection.</div>`;
+    openSheet("Soundtrack", `${player}
+      <a class="btn ghost pl-open" href="${esc(sp.url)}" target="_blank" rel="noopener noreferrer">Open in Spotify</a>
+      <p class="sq-ihint" style="margin:10px 4px 0">Full tracks play if you're logged in to Spotify in this browser; otherwise you'll hear previews. Open in Spotify for the full playlist.</p>`);
+    playlistMeta(url).then(m => { const t = document.querySelector("#nsheet .ns-title"); if (m?.title && t) t.textContent = m.title; });
   }
   function spark(values) {
     if (values.length < 2) return "";
@@ -437,6 +464,7 @@ export function initTracker() {
     html += `</div>`;
 
     view().innerHTML = html;
+    hydratePlaylists(view());
     if (isSpotifyConnected()) enhanceNowPlaying();   // swap in live Spotify track
   }
 
@@ -1664,7 +1692,7 @@ export function initTracker() {
     const musOn = pv.music;
     const spotBlock = spotifyConfigured() ? (isSpotifyConnected()
       ? `<div class="spot-row"><span class="spot-badge">Spotify connected</span>
-          <span class="spot-acts"><button class="lb-r" data-act="spotpick">Pick a playlist</button>
+          <span class="spot-acts"><button class="lb-r" data-act="spotpick">${mus.url ? "Change playlist" : "Pick a playlist"}</button>
             <button class="lb-r" data-act="spotoff">Disconnect</button></span></div>
         ${canControlPlayback()
           ? `<div class="priv-row ap-row"><span><b>Auto-play on Start</b><small>Starting a workout plays your soundtrack on Spotify. Premium; Spotify open on a device.</small></span>
@@ -1674,14 +1702,22 @@ export function initTracker() {
       : `<button class="btn sm spot-connect" data-act="spoton">Connect Spotify</button>
          <p class="sq-ihint" style="margin:8px 0 0">Authorize once, then pick a playlist to share — no typing a link.</p>`)
       : "";
-    html += `<div class="subhead">Your training soundtrack</div><div class="card">
-      ${musOn ? `${spotBlock ? spotBlock + `<div class="or-line"><span>or paste a link</span></div>` : ""}
+    const musUrl = mus.url ? safeMusicUrl(mus.url) : null;
+    const current = musUrl ? `<div class="pl-cur">
+        <button class="pl-cur-main" ${spotifyLink(musUrl) ? `data-act="plopen" data-url="${esc(musUrl)}"` : `data-act="plext" data-url="${esc(musUrl)}"`}>
+          <span class="pl-cover"${plCover(musUrl)}>${ICON.note}</span>
+          <span class="pl-meta"><small>Now sharing</small><b${plTitle(musUrl, mus.label)}>${esc(mus.label || "Training playlist")}</b></span>
+          <span class="hm2-go">${ICON.play}</span></button>
+        <button class="lb-r pl-remove" data-act="musremove">Remove</button></div>` : "";
+    html += `<div class="subhead" id="soundtrack">Your training soundtrack</div><div class="card">
+      ${musOn ? `${current}${spotBlock}
+      <details class="pl-link"${!musUrl && !spotBlock ? " open" : ""}><summary>${musUrl ? "Edit link or vibe" : spotBlock ? "Or paste a link" : "Add a playlist link"}</summary>
       <div class="field"><label>Playlist link (Spotify, Apple Music, YouTube…)</label>
         <input id="mus-url" class="inp" type="url" inputmode="url" autocapitalize="none" placeholder="https://…" value="${esc(mus.url || "")}"></div>
       <div class="field" style="margin-top:10px"><label>Vibe <small style="color:var(--muted)">(optional)</small></label>
         <input id="mus-label" class="inp" placeholder="e.g. Heavy rap · gym phonk" maxlength="40" value="${esc(mus.label || "")}"></div>
-      <button class="btn sm" data-act="savemusic" style="margin-top:12px">Save soundtrack</button>
-      <p class="sq-ihint" style="margin-top:8px">Your squad sees this on the Squad tab. Clear the link to stop sharing.</p>`
+      <button class="btn sm" data-act="savemusic" style="margin-top:12px">Save soundtrack</button></details>
+      <p class="sq-ihint" style="margin-top:10px">Your squad sees this on the Squad tab.</p>`
       : `<p class="sq-ihint" style="margin:0">Music sharing is off. Turn on <b>Music</b> above to share a playlist with your squad.</p>`}
       </div>`;
 
@@ -1704,6 +1740,7 @@ export function initTracker() {
         No Limit — every muscle, every head, no excuses.</div>`;
 
     view().innerHTML = html;
+    hydratePlaylists(view());
   }
 
   /* ============================ PROFILE ============================ */
@@ -1771,8 +1808,10 @@ export function initTracker() {
     html += `<div class="subhead">Yours</div>
       <button class="linkbtn" data-act="gosquad">Your squad<small>Leaderboard, challenges, accountability</small></button>
       ${mus.url
-        ? `<a class="linkbtn" href="${esc(safeMusicUrl(mus.url) || "#")}" target="_blank" rel="noopener noreferrer">${esc(mus.label || "Your soundtrack")}<small>Open your training playlist</small></a>`
-        : `<button class="linkbtn" data-act="goplan">Set your soundtrack<small>Share a playlist with your squad</small></button>`}
+        ? (spotifyLink(mus.url)
+          ? `<button class="linkbtn" data-act="plopen" data-url="${esc(mus.url)}">${esc(mus.label || "Your soundtrack")}<small>Play your training playlist</small></button>`
+          : `<a class="linkbtn" href="${esc(safeMusicUrl(mus.url) || "#")}" target="_blank" rel="noopener noreferrer">${esc(mus.label || "Your soundtrack")}<small>Open your training playlist</small></a>`)
+        : `<button class="linkbtn" data-act="gomusic">Set your soundtrack<small>Share a playlist with your squad</small></button>`}
       <button class="linkbtn" data-act="settings">Settings<small>Weekly goal, schedule, Spotify, privacy, your data, log out.</small></button>`;
 
     view().innerHTML = html;
@@ -1970,10 +2009,12 @@ export function initTracker() {
       const url = safeMusicUrl(p.music_url);
       if (!url) return "";
       const nm = p.name || p.username || "Member";
-      return `<a class="mus-row" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
-        ${avatarMarkup(nm, p.avatar_url, "sq-av sm")}
-        <span class="mus-info"><b>${esc(nm)}</b><small>${esc(p.music_label || "Training playlist")}</small></span>
-        <span class="mus-play">▶</span></a>`;
+      const inner = `<span class="mus-cover"${plCover(url)}>${avatarMarkup(nm, p.avatar_url, "sq-av sm")}</span>
+        <span class="mus-info"><b>${esc(nm)}</b><small${plTitle(url, p.music_label)}>${esc(p.music_label || "Training playlist")}</small></span>
+        <span class="mus-play">${ICON.play}</span>`;
+      return spotifyLink(url)
+        ? `<button class="mus-row" data-act="plopen" data-url="${esc(url)}">${inner}</button>`
+        : `<a class="mus-row" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
     }).filter(Boolean).join("");
     if (!items) return "";
     return `<div class="subhead">What we train to</div><div class="card mus-card">${items}</div>`;
@@ -2092,6 +2133,7 @@ export function initTracker() {
       <div class="subhead">Squad activity</div>
       <div class="feed">${renderFeedPosts(feed, u.id)}</div>
       <button class="linkbtn" data-act="leavesquad" data-sid="${esc(squad.id)}" style="border-color:#5a3030;margin-top:14px">Leave squad</button>`;
+    hydratePlaylists(view());
     loadSquadPhotos();
   }
 
@@ -2475,6 +2517,15 @@ export function initTracker() {
     else if (act === "profile") go("profile");
     else if (act === "gosquad") go("squad");
     else if (act === "goplan") go("plan");
+    else if (act === "gomusic") { go("settings"); document.getElementById("soundtrack")?.scrollIntoView({ block: "start" }); }
+    else if (act === "plopen") openPlaylist(el.dataset.url);
+    else if (act === "plext") { const u = safeMusicUrl(el.dataset.url); if (u) window.open(u, "_blank", "noopener"); }
+    else if (act === "musremove") {
+      if (!confirm("Stop sharing your soundtrack with the squad?")) return;
+      setMusic(cachedUser().id, "", "")
+        .then(() => { toast("Soundtrack removed"); renderSettings(); })
+        .catch(() => toast("Couldn't remove — try again"));
+    }
     else if (act === "goprogress") go("progress");
     else if (act === "editprofile") openProfileEdit();
     else if (act === "avatarpick") document.getElementById("avatar-file")?.click();
