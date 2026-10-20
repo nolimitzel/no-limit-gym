@@ -142,6 +142,17 @@ export function initTracker() {
      server confirms it — whether it was finished, auto-saved, or logged offline.
      Backfilled posts are dated to the day of the workout. */
   let RECON_BUSY = false, RECON_AT = 0, PRIV_READY = false, MY_SQUAD = null;
+  /* Was this workout logged while squad sharing was on? Per-workout flag on the
+     device that logged it, plus the synced "sharing back on since" moment from the
+     privacy record, so every device agrees. When unsure, keep it private. */
+  function sharedLog(l) {
+    if (l.share === false) return false;
+    const since = getPrivacy().workoutsOnSince;
+    if (!since) return true;
+    const sinceDay = ymd(new Date(since));
+    if (l.date !== sinceDay) return l.date > sinceDay;
+    return !!l.startedAt && l.startedAt >= Date.parse(since);
+  }
   async function reconcilePosts(force) {
     const u = cachedUser();
     // only once this account's real privacy choice has loaded (never the default),
@@ -160,7 +171,7 @@ export function initTracker() {
       if (MY_SQUAD.myJoinedAt) { const j = ymd(new Date(MY_SQUAD.myJoinedAt)); if (j > since) since = j; }
       const today = todayStr();
       // shared workouts only; today's unfinished one waits for Finish (or the day to end)
-      const eligible = DB.logs.filter(l => l.share !== false && !(l.date === today && l.done === false));
+      const eligible = DB.logs.filter(l => sharedLog(l) && !(l.date === today && l.done === false));
       if (!eligible.some(l => l.date >= since)) return;
       const posts = await getMyWorkoutPosts(sid, u.id, new Date(parseYmd(since).getTime() - 86400000).toISOString());
       for (const l of missingPosts(eligible, posts, { since, nameOf: sessName })) {
@@ -2561,10 +2572,8 @@ export function initTracker() {
     else if (act === "togglepriv") {
       const key = el.dataset.key;
       const next = !getPrivacy()[key];
-      if (key === "workouts" && next) {           // sharing back on: earlier private workouts stay private
-        DB.logs.forEach(l => { if (l.share !== true) l.share = false; }); save();
-      }
-      setPrivacy(cachedUser().id, { [key]: next });
+
+      setPrivacy(cachedUser().id, key === "workouts" && next ? { workouts: true, workoutsOnSince: new Date().toISOString() } : { [key]: next });
       if (key === "music" && !next) setMusic(cachedUser().id, "", "").catch(() => {}); // unshare on opt-out
       renderSettings();
     }

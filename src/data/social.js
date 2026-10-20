@@ -15,6 +15,7 @@ export async function postActivity(userId, squadId, type, data, createdAt) {
   try {
     const row = { user_id: userId, squad_id: squadId, type, data, ...(createdAt ? { created_at: createdAt } : {}) };
     const { error } = await supabase.from("activity_posts").insert(row);
+    if (error && error.code === "23505") return true;     // already posted (one-per-workout rule, migrate_14)
     if (error) { console.warn("[NO LIMIT] activity post failed", error.message); return false; }
     return true;
   } catch (e) { console.warn("[NO LIMIT] activity post failed", e?.message || e); return false; }
