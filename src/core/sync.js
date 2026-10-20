@@ -44,7 +44,7 @@ export const logKey = (l) => l.date + "|" + l.session;
 export function mergeDB(local = {}, cloud = {}) {
   // workout state the cloud doesn't store (finished / posted / timing) stays from this device
   const logs = mergeRecords(local.logs, cloud.logs, logKey,
-    { same: (a, b) => canonEntries(a.entries) === canonEntries(b.entries), preserve: ["done", "posted", "startedAt", "finishedAt"] });
+    { same: (a, b) => canonEntries(a.entries) === canonEntries(b.entries), preserve: ["done", "posted", "startedAt", "finishedAt", "share"] });
   const body = mergeRecords(local.body, cloud.body, (b) => b.date,
     { same: (a, b) => Number(a.weight) === Number(b.weight) });
   const macros = mergeRecords(local.macros, cloud.macros, (m) => m.date, {

@@ -9,11 +9,11 @@ const genCode = () =>
 
 export async function getMySquad(userId) {
   const { data: mem, error } = await supabase.from("squad_members")
-    .select("squad_id,role").eq("user_id", userId).limit(1);
+    .select("squad_id,role,joined_at").eq("user_id", userId).limit(1);
   if (error) throw error;
   if (!mem || !mem[0]) return null;
   const { data: sq } = await supabase.from("squads").select("*").eq("id", mem[0].squad_id).maybeSingle();
-  return sq ? { ...sq, myRole: mem[0].role } : null;
+  return sq ? { ...sq, myRole: mem[0].role, myJoinedAt: mem[0].joined_at || null } : null;
 }
 
 export async function getMembers(squadId) {

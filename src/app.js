@@ -1,7 +1,7 @@
 /* ==========================================================================
    NO LIMIT — Gym Tracker  (offline, on-device PWA)
    ========================================================================== */
-import { signOut, cachedUser } from "./auth/auth.js";
+import { signOut, cachedUser, hasLiveSession } from "./auth/auth.js";
 import { pushWorkout, pushBodyweight, pushMacros, deleteAllHistory } from "./data/cloudStore.js";
 import { getActiveProgramme, exMeta as resolveExercise } from "./data/programme.js";
 import { esc } from "./ui/safeRender.js";
@@ -97,7 +97,7 @@ export function initTracker() {
   // every write marks the record unsynced until the cloud confirms it (core/sync.js)
   function upsertLog(date, session, entries) {
     let l = getLog(date, session);
-    if (!l) { l = { date, session, entries: {}, ts: Date.now() }; DB.logs.push(l); }
+    if (!l) { l = { date, session, entries: {}, ts: Date.now(), share: !!getPrivacy().workouts }; DB.logs.push(l); }
     l.entries = entries; l.ts = Date.now();
     markDirty(l);
     return l;
@@ -141,24 +141,34 @@ export function initTracker() {
      14 days with at least one set gets exactly one post, retried until the
      server confirms it — whether it was finished, auto-saved, or logged offline.
      Backfilled posts are dated to the day of the workout. */
-  let RECON_BUSY = false, RECON_AT = 0;
+  let RECON_BUSY = false, RECON_AT = 0, PRIV_READY = false, MY_SQUAD = null;
   async function reconcilePosts(force) {
     const u = cachedUser();
-    if (RECON_BUSY || !u || !getPrivacy().workouts || (!force && Date.now() - RECON_AT < 20000)) return;
+    // only once this account's real privacy choice has loaded (never the default),
+    // and only with a session the server accepts (an anon read would see no posts
+    // and re-post everything)
+    if (RECON_BUSY || !u || !PRIV_READY || !getPrivacy().workouts || (!force && Date.now() - RECON_AT < 20000)) return;
     RECON_BUSY = true; RECON_AT = Date.now();
     try {
-      let sid = getCurrentSquad();
-      if (!sid) { const sq = await getMySquad(u.id); sid = sq?.id; setCurrentSquad(sid); }
+      if (!(await hasLiveSession())) return;
+      if (!MY_SQUAD || MY_SQUAD.id !== getCurrentSquad()) { MY_SQUAD = await getMySquad(u.id); setCurrentSquad(MY_SQUAD?.id); }
+      const sid = MY_SQUAD?.id;
       if (!sid) return;
+      // backfill at most 14 days, and never from before joining this squad
       const sinceDate = new Date(); sinceDate.setDate(sinceDate.getDate() - 14);
-      const since = ymd(sinceDate);
-      if (!DB.logs.some(l => l.date >= since)) return;
-      const posts = await getMyWorkoutPosts(sid, u.id, new Date(parseYmd(since).getTime() - 86400000).toISOString());
+      let since = ymd(sinceDate);
+      if (MY_SQUAD.myJoinedAt) { const j = ymd(new Date(MY_SQUAD.myJoinedAt)); if (j > since) since = j; }
       const today = todayStr();
-      for (const l of missingPosts(DB.logs, posts, { since, nameOf: sessName })) {
+      // shared workouts only; today's unfinished one waits for Finish (or the day to end)
+      const eligible = DB.logs.filter(l => l.share !== false && !(l.date === today && l.done === false));
+      if (!eligible.some(l => l.date >= since)) return;
+      const posts = await getMyWorkoutPosts(sid, u.id, new Date(parseYmd(since).getTime() - 86400000).toISOString());
+      for (const l of missingPosts(eligible, posts, { since, nameOf: sessName })) {
         const n = Object.values(l.entries).filter(x => x.length).length;
-        const data = { title: sessName(l.session), date: l.date, key: l.session, ...(l.done !== false ? { exercises: n } : {}) };
-        const at = l.date === today ? undefined : l.date + "T12:00:00Z";      // midday on the workout's own date
+        const data = { title: sessName(l.session), date: l.date, key: l.session, exercises: n };
+        // backfills are dated midday (local) on the workout's own day
+        const [y, m, d] = l.date.split("-").map(Number);
+        const at = l.date === today ? undefined : new Date(y, m - 1, d, 12).toISOString();
         if (!(await postActivity(u.id, sid, "workout", data, at))) break;   // offline again — next sync retries
       }
     } catch (e) {
@@ -171,6 +181,14 @@ export function initTracker() {
     toast(ok ? okMsg : "Saved on this device — it'll sync when you're back online");
   }
   window.addEventListener("online", () => syncPending());
+  window.addEventListener("nl-session-live", () => {
+    // after an offline launch the account's privacy choice was never loaded — load it, then sync
+    if (!PRIV_READY && cachedUser()) getProfile(cachedUser().id).then(pr => {
+      PROFILE = pr; applyCloudPrivacy(pr?.privacy); PRIV_READY = true; renderHeader(); syncPending();
+    }).catch(() => {});
+    syncPending();
+  });
+  setInterval(() => { if (DB.logs.concat(DB.body, DB.macros).some(r => r.synced === false)) syncPending(); }, 60000);
   // photos live 4 weeks: quietly delete this user's expired files a few seconds after launch
   setTimeout(() => purgeExpiredPhotos(cachedUser()?.id), 5000);
   // history queries — pure + unit-tested, keyed by stable exercise key (core/history.js)
@@ -2543,6 +2561,9 @@ export function initTracker() {
     else if (act === "togglepriv") {
       const key = el.dataset.key;
       const next = !getPrivacy()[key];
+      if (key === "workouts" && next) {           // sharing back on: earlier private workouts stay private
+        DB.logs.forEach(l => { if (l.share !== true) l.share = false; }); save();
+      }
       setPrivacy(cachedUser().id, { [key]: next });
       if (key === "music" && !next) setMusic(cachedUser().id, "", "").catch(() => {}); // unshare on opt-out
       renderSettings();
@@ -2608,6 +2629,7 @@ export function initTracker() {
   renderHeader();
   if (cachedUser()) getProfile(cachedUser().id).then(pr => {
     PROFILE = pr; applyCloudPrivacy(pr?.privacy); renderHeader();
+    PRIV_READY = true; reconcilePosts(true);
     if (TAB === "today") renderToday();
   }).catch(() => {});
   go("today");

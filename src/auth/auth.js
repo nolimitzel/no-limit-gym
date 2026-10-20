@@ -13,6 +13,8 @@ if (supabase) supabase.auth.onAuthStateChange((event, session) => {
   if (!session && _offline && event !== "SIGNED_OUT") return;
   _session = session;
   if (session) _offline = false;
+  // a working session again (e.g. signal back after an offline launch) → let the app resync now
+  if (session && (event === "TOKEN_REFRESHED" || event === "SIGNED_IN")) window.dispatchEvent(new Event("nl-session-live"));
 });
 
 // the signed-in session as the auth client stored it on this device
@@ -33,13 +35,24 @@ function storedSession() {
    user's on-device workouts stay usable; it's refreshed once the network is back
    (core/boot.js has the rules, incl. never resurrecting a revoked session). */
 export async function getSession() {
-  const { data, error } = await supabase.auth.getSession();
-  _session = data.session;
+  // With no signal the client retries the token refresh for ~25 s before giving up;
+  // don't leave a blank screen that long — after 4 s treat it as a network failure.
+  const slow = { name: "AuthRetryableFetchError", status: 0, message: "refresh timed out (offline?)" };
+  const res = await Promise.race([
+    supabase.auth.getSession(),
+    new Promise(r => setTimeout(() => r({ data: { session: null }, error: slow, timedOut: true }), 4000)),
+  ]);
+  _session = res.data.session;
   if (!_session) {
-    const s = offlineBootSession({ session: null, error, stored: storedSession(), online: navigator.onLine });
+    const s = offlineBootSession({ session: null, error: res.error, stored: storedSession(), online: navigator.onLine });
     if (s) { _session = s; _offline = true; console.warn("[NO LIMIT] offline — opening with the session saved on this device."); }
   }
   return _session;
+}
+// a session the server will accept right now (not the offline stand-in, not the anon key)
+export async function hasLiveSession() {
+  if (_offline) return false;
+  try { const { data } = await supabase.auth.getSession(); return !!data.session; } catch { return false; }
 }
 export const isOfflineSession = () => _offline;
 export function cachedUser() { return _session?.user || null; }
@@ -54,8 +67,15 @@ export async function signIn({ email, password }) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 export async function signOut() {
-  await supabase.auth.signOut();
-  _session = null;
+  // Offline with an expired token the client refuses to sign out (it can't load the
+  // session) and leaves it in storage — which the offline boot would then reopen.
+  // Always clear this device's copy so sign-out means signed out.
+  try { await supabase.auth.signOut(); } catch {}
+  try {
+    const key = supabase.auth.storageKey;
+    localStorage.removeItem(key); localStorage.removeItem(key + "-user"); localStorage.removeItem(key + "-code-verifier");
+  } catch {}
+  _session = null; _offline = false;
 }
 export async function resetPassword(email) {
   return supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });

@@ -23,3 +23,8 @@ test("signed out (nothing stored) goes to login, online or not", () => {
   assert.equal(offlineBootSession({ session: null, error: netErr, stored: null, online: false }), null);
   assert.equal(offlineBootSession({ session: null, error: netErr, stored: { user: {} }, online: false }), null);
 });
+
+test("a refresh that timed out (slow/no signal) counts as a network failure", () => {
+  const slow = { name: "AuthRetryableFetchError", status: 0, message: "refresh timed out (offline?)" };
+  assert.equal(offlineBootSession({ session: null, error: slow, stored, online: true }), stored);
+});

@@ -83,3 +83,9 @@ test("supplement ticks survive a merge with a cloud copy that predates them", ()
   const merged = mergeDB({ macros: [{ ...cloud.macros[0], synced: true, supps: ["creatine"] }] }, cloud);
   assert.deepEqual(merged.macros[0].supps, ["creatine"]);
 });
+
+test("a workout logged with squad sharing off stays private through a cloud merge", () => {
+  const cloud = { logs: [{ date: "2026-10-18", session: "back", entries: { b: [{ w: 50, r: 10 }] } }] };
+  const merged = mergeDB({ logs: [{ ...cloud.logs[0], synced: true, share: false }] }, cloud);
+  assert.equal(merged.logs[0].share, false);
+});
