@@ -12,7 +12,8 @@ let state = { goal: "lean_gain", experience: "intermediate", training_days: ["Mo
 
 export async function mountOnboarding(user, onDone) {
   document.body.classList.add("chrome-hidden");
-  const p = (await getProfile(user.id)) || {};
+  // a failed read just means empty fields — the screen must still render
+  const p = (await getProfile(user.id).catch(() => null)) || {};
   state.name = p.name || user.user_metadata?.name || "";
   state.username = p.username || user.user_metadata?.username || "";
   render(user, onDone);
@@ -34,30 +35,34 @@ function render(user, onDone, msg) {
       <p class="auth-sub">Let's set up your training — 30 seconds, change anything later.</p>
       ${msg ? `<div class="auth-note err">${esc(msg)}</div>` : ""}
 
-      <div class="ob-row">
-        <label class="auth-f"><span>Name</span>
-          <input id="ob-name" value="${esc(state.name || "")}" maxlength="40" placeholder="Your name"></label>
-        <label class="auth-f"><span>Username</span>
-          <input id="ob-user" value="${esc(state.username || "")}" maxlength="20" autocapitalize="none" placeholder="username"></label>
-      </div>
+      <section class="ob-card glass">
+        <div class="ob-row">
+          <label class="auth-f"><span>Name</span>
+            <input id="ob-name" value="${esc(state.name || "")}" maxlength="40" placeholder="Your name"></label>
+          <label class="auth-f"><span>Username</span>
+            <input id="ob-user" value="${esc(state.username || "")}" maxlength="20" autocapitalize="none" placeholder="username"></label>
+        </div>
+      </section>
 
-      <div class="ob-label">Your goal</div>
-      ${chips("goal", GOALS, state.goal, false)}
+      <section class="ob-card glass">
+        <div class="ob-label">Your goal</div>
+        ${chips("goal", GOALS, state.goal, false)}
+        <div class="ob-label">Experience</div>
+        ${chips("experience", EXP, state.experience, false)}
+      </section>
 
-      <div class="ob-label">Experience</div>
-      ${chips("experience", EXP, state.experience, false)}
+      <section class="ob-card glass">
+        <div class="ob-row">
+          <label class="auth-f"><span>Bodyweight (kg)</span>
+            <input id="ob-bw" type="number" inputmode="decimal" step="0.1" value="${state.bw_current ?? ""}"></label>
+          <label class="auth-f"><span>Target (kg)</span>
+            <input id="ob-tg" type="number" inputmode="decimal" step="0.1" value="${state.bw_target ?? ""}"></label>
+        </div>
+        <div class="ob-label">Training days</div>
+        ${chips("training_days", DAYS.map(d => [d, d]), state.training_days, true)}
+      </section>
 
-      <div class="ob-row">
-        <label class="auth-f"><span>Bodyweight (kg)</span>
-          <input id="ob-bw" type="number" inputmode="decimal" step="0.1" value="${state.bw_current ?? ""}"></label>
-        <label class="auth-f"><span>Target (kg)</span>
-          <input id="ob-tg" type="number" inputmode="decimal" step="0.1" value="${state.bw_target ?? ""}"></label>
-      </div>
-
-      <div class="ob-label">Training days</div>
-      ${chips("training_days", DAYS.map(d => [d, d]), state.training_days, true)}
-
-      <button class="btn" id="ob-go" style="margin-top:20px">Enter No Limit →</button>
+      <button class="btn" id="ob-go">Enter No Limit →</button>
     </div>`;
   wire(user, onDone);
 }

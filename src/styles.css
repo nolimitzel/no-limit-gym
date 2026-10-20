@@ -1038,3 +1038,21 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .nl-por{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
 .nl-g{margin:10px 4px 0}
 .nl-g input{width:110px;font-size:22px}
+
+/* onboarding in the glass system: sections are glass cards, choices are ink,
+   volt is kept for the one call to action */
+.ob{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 28px)}
+.ob .auth-brand{margin-bottom:22px}
+.ob-card{padding:16px 16px 18px;margin-bottom:12px}
+.ob-card > .ob-row{margin-top:0}
+.ob-card .auth-f{margin-bottom:0}
+.ob-card .ob-row + .ob-label{margin-top:18px}
+.ob-label{color:var(--muted);margin:0 0 10px}
+.ob-chips + .ob-label{margin-top:18px}
+.ob .auth-f input{background:rgba(0,0,0,.28);border:1px solid var(--glass-brd);border-radius:12px}
+.ob .auth-f input:focus{border-color:rgba(255,255,255,.5);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+.ob-chip{background:var(--glass2);border:1px solid var(--glass-brd);border-radius:12px;color:var(--muted)}
+.ob-chip.on{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.45);color:var(--ink)}
+.ob .auth-note{border-radius:12px}
+.ob #ob-go{margin-top:8px;width:100%;background:var(--brand);color:#0A0B0A;
+  box-shadow:0 10px 28px rgba(204,255,0,.18),0 10px 24px rgba(0,0,0,.5)}
