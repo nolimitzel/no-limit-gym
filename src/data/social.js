@@ -8,10 +8,25 @@ export function getCurrentSquad() { return _squadId; }
 
 export const REACTIONS = ["🔥", "💪", "👏"];
 
-export async function postActivity(userId, squadId, type, data) {
-  if (!squadId) return;
-  try { await supabase.from("activity_posts").insert({ user_id: userId, squad_id: squadId, type, data }); }
-  catch (e) { console.warn("[NO LIMIT] activity post failed", e?.message || e); }
+// resolves true only when the server confirmed the insert (supabase-js returns
+// errors rather than throwing, so the old try/catch never saw a failed post)
+export async function postActivity(userId, squadId, type, data, createdAt) {
+  if (!squadId) return false;
+  try {
+    const row = { user_id: userId, squad_id: squadId, type, data, ...(createdAt ? { created_at: createdAt } : {}) };
+    const { error } = await supabase.from("activity_posts").insert(row);
+    if (error) { console.warn("[NO LIMIT] activity post failed", error.message); return false; }
+    return true;
+  } catch (e) { console.warn("[NO LIMIT] activity post failed", e?.message || e); return false; }
+}
+
+// this user's own workout posts in a squad since a time (to find what's missing)
+export async function getMyWorkoutPosts(squadId, userId, sinceIso) {
+  const { data, error } = await supabase.from("activity_posts")
+    .select("created_at,data").eq("squad_id", squadId).eq("user_id", userId).eq("type", "workout")
+    .gte("created_at", sinceIso);
+  if (error) throw error;
+  return data || [];
 }
 
 export async function getFeed(squadId) {

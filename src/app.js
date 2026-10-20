@@ -7,6 +7,7 @@ import { getActiveProgramme, exMeta as resolveExercise } from "./data/programme.
 import { esc } from "./ui/safeRender.js";
 import * as H from "./core/history.js";
 import { weekdayPos, isSessionReferenced, weeklyGoal, comboParts, comboKey } from "./core/programme.js";
+import { missingPosts } from "./core/posts.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
 import { saveProgramme, defaultProgrammeData } from "./data/programmeStore.js";
 import { getMySquad, getMembers, createSquad, joinSquad, leaveSquad } from "./data/squad.js";
@@ -18,7 +19,7 @@ import { FOOD_LIBRARY, FOOD_CATS, libFood, STARTER_MEALS } from "./data/foods.js
 import { SUPP_LIBRARY, SUPP_CATS, libSupp, ESSENTIALS } from "./data/supplements.js";
 import { mealTotals, foodMacros, PORTIONS, portionLabel, suppAdherence } from "./core/nutrition.js";
 import { getCustomExercises, addCustomExercise } from "./data/customExercises.js";
-import { getCurrentSquad, setCurrentSquad, postActivity, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
+import { getCurrentSquad, setCurrentSquad, postActivity, getMyWorkoutPosts, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy, applyCloudPrivacy } from "./data/privacy.js";
 import { getMyCommitment, setCommitment, getSquadCommitmentsAll, weekStartISO, prevWeekISO } from "./data/commitments.js";
@@ -133,6 +134,36 @@ export function initTracker() {
         }
       }
     } finally { SYNCING = false; }
+    reconcilePosts();
+  }
+
+  /* Squad posts follow the workouts (core/posts.js): every workout from the last
+     14 days with at least one set gets exactly one post, retried until the
+     server confirms it — whether it was finished, auto-saved, or logged offline.
+     Backfilled posts are dated to the day of the workout. */
+  let RECON_BUSY = false, RECON_AT = 0;
+  async function reconcilePosts(force) {
+    const u = cachedUser();
+    if (RECON_BUSY || !u || !getPrivacy().workouts || (!force && Date.now() - RECON_AT < 20000)) return;
+    RECON_BUSY = true; RECON_AT = Date.now();
+    try {
+      let sid = getCurrentSquad();
+      if (!sid) { const sq = await getMySquad(u.id); sid = sq?.id; setCurrentSquad(sid); }
+      if (!sid) return;
+      const sinceDate = new Date(); sinceDate.setDate(sinceDate.getDate() - 14);
+      const since = ymd(sinceDate);
+      if (!DB.logs.some(l => l.date >= since)) return;
+      const posts = await getMyWorkoutPosts(sid, u.id, new Date(parseYmd(since).getTime() - 86400000).toISOString());
+      const today = todayStr();
+      for (const l of missingPosts(DB.logs, posts, { since, nameOf: sessName })) {
+        const n = Object.values(l.entries).filter(x => x.length).length;
+        const data = { title: sessName(l.session), date: l.date, key: l.session, ...(l.done !== false ? { exercises: n } : {}) };
+        const at = l.date === today ? undefined : l.date + "T12:00:00Z";      // midday on the workout's own date
+        if (!(await postActivity(u.id, sid, "workout", data, at))) break;   // offline again — next sync retries
+      }
+    } catch (e) {
+      console.warn("[NO LIMIT] squad posts will retry:", e?.message || e);
+    } finally { RECON_BUSY = false; }
   }
   async function saveAndSync(kind, rec, okMsg) {
     markDirty(rec);
@@ -799,7 +830,7 @@ export function initTracker() {
     if (!existed) { rec.done = false; rec.startedAt = Date.now(); save(); }   // a new workout is in progress until Finish
     saveState("Saved");
     clearTimeout(PUSH_T);
-    PUSH_T = setTimeout(() => pushRecord("log", rec), 4000);
+    PUSH_T = setTimeout(() => pushRecord("log", rec).then(ok => { if (ok) reconcilePosts(); }), 4000);
   }
   function scheduleAutosave() { clearTimeout(AUTOSAVE_T); saveState("Saving…"); AUTOSAVE_T = setTimeout(autosave, 600); }
   function flushAutosave() {
@@ -821,16 +852,11 @@ export function initTracker() {
     if (blankWeight && !confirm(`${blankWeight} set${blankWeight === 1 ? " has" : "s have"} reps but no weight.\n\nSave as bodyweight (0 kg)? Tap Cancel to go back and add the weight.`)) return;
     const rec = upsertLog(today, ACTIVE, entries);
     rec.done = true; rec.finishedAt = Date.now(); rec.startedAt ||= rec.finishedAt;
-    // one squad post per workout, on finish (AUDIT H2)
-    const u = cachedUser(), sid = getCurrentSquad();
-    if (!rec.posted && u && sid && getPrivacy().workouts) {
-      postActivity(u.id, sid, "workout", { title: sessName(ACTIVE), exercises: Object.keys(entries).length });
-      rec.posted = true;
-    }
     save();
     renderDone(rec);
     const ok = await pushRecord("log", rec);
     if (!ok) toast("Saved on this device — it'll sync when you're back online");
+    reconcilePosts(true);                 // squad post (once per workout, retried until confirmed)
   }
 
   function renderDone(rec) {
@@ -1014,14 +1040,16 @@ export function initTracker() {
     for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(mon.getDate() + i); days.push(ymd(d)); }
     return days;
   }
-  function weeklyReport() {
-    const days = weekBounds();
+  // which: "this" (Mon–Sun containing today) or "last" (the full week before)
+  function weeklyReport(which = "this") {
+    const ref = new Date(); if (which === "last") ref.setDate(ref.getDate() - 7);
+    const days = weekBounds(ref);
     const today = todayStr();
     const dn = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const t = getActiveTargets();
     const L = [];
     L.push("🏋️ NO LIMIT — WEEKLY REVIEW");
-    L.push("Week: " + prettyShort(days[0]) + " – " + prettyShort(days[6]));
+    L.push("Week: " + prettyShort(days[0]) + " – " + prettyShort(days[6]) + (which === "last" ? " (last week)" : days[6] >= today ? " (so far)" : ""));
     L.push("");
 
     // Training adherence — any session logged that day counts (a swapped or quick
@@ -1043,7 +1071,8 @@ export function initTracker() {
         tl.push(`${d > today ? "·" : "✘"}  ${dn[i]} · ${planned} — ${d > today ? "upcoming" : d === today ? "not logged yet" : "not logged"}`);
       } else tl.push(`—  ${dn[i]}`);
     });
-    L.push(`TRAINING — ${done}/${goal} sessions (weekly goal ${goal})`);
+    const workouts = DB.logs.filter(l => days.includes(l.date) && Object.values(l.entries).some(x => x.length)).length;
+    L.push(`TRAINING — trained on ${done} day${done === 1 ? "" : "s"} (weekly goal ${goal}) · ${workouts} workout${workouts === 1 ? "" : "s"} logged`);
     tl.forEach(x => L.push(x));
     L.push("");
 
@@ -1214,12 +1243,17 @@ export function initTracker() {
     startRest(H.restSecondsFor(m.reps), m.name);
   });
 
-  function showReport() {
-    const text = weeklyReport();
+  function showReport(which) {
+    // on a Monday the new week is empty — open on the week you just finished
+    which = which || (new Date().getDay() === 1 ? "last" : "this");
+    const text = weeklyReport(which);
     const ov = document.createElement("div");
     ov.className = "modal";
     ov.innerHTML = `<div class="modal-box">
       <div class="modal-head"><b>Weekly Review</b><span class="mx" data-act="closemodal">✕</span></div>
+      <div class="seg" style="margin-bottom:10px">
+        <button class="seg-b${which === "last" ? " on" : ""}" data-act="reportweek" data-v="last">Last week</button>
+        <button class="seg-b${which === "this" ? " on" : ""}" data-act="reportweek" data-v="this">This week</button></div>
       <textarea class="report" readonly>${esc(text)}</textarea>
       <div class="modal-actions">
         ${navigator.share ? `<button class="btn sm" data-act="sharereport">Share</button>` : ""}
@@ -2043,7 +2077,7 @@ export function initTracker() {
     return feed.map(p => {
       const name = p.profiles?.name || p.profiles?.username || "Someone";
       const text = p.type === "workout"
-        ? `completed <b>${esc(p.data?.title || "a workout")}</b>${p.data?.exercises ? ` · ${p.data.exercises} exercise${p.data.exercises === 1 ? "" : "s"}` : ""}`
+        ? `trained <b>${esc(p.data?.title || "a workout")}</b>${p.data?.exercises ? ` · ${p.data.exercises} exercise${p.data.exercises === 1 ? "" : "s"}` : ""}`
         : `<b>${esc(p.data?.title || "did something")}</b>`;
       const reax = p.activity_reactions || [];
       const btns = REACTIONS.map(e => {
@@ -2382,6 +2416,12 @@ export function initTracker() {
     else if (act === "hideinstall") { DB.settings.hideInstall = true; save(); renderToday(); }
     else if (act === "weekly") { showReport(); }
     else if (act === "closemodal") { const m = el.closest(".modal"); if (m) m.remove(); }
+    else if (act === "reportweek") {
+      const m = el.closest(".modal"); if (!m) return;
+      const text = weeklyReport(el.dataset.v);
+      m._text = text; m.querySelector(".report").value = text;
+      m.querySelectorAll('[data-act="reportweek"]').forEach(b => b.classList.toggle("on", b === el));
+    }
     else if (act === "sharereport") {
       const text = el.closest(".modal")?._text || weeklyReport();
       navigator.share({ title: "My week — NO LIMIT", text }).catch(() => {});
