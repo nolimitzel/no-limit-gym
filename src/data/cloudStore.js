@@ -28,13 +28,18 @@ async function fetchAll(build) {
   }
 }
 
-/* ---- WRITE one workout: idempotent per (date, session_key) ---- */
+/* ---- WRITE one workout: idempotent per (date, session_key) ----
+   started_at is when the workout really began on the phone (it used to default to
+   the moment the row reached the server, so an offline workout looked a day late).
+   completed_at stays the write time: loadAll keeps the newest copy by it. */
 export async function pushWorkout(userId, log) {
+  const row = {
+    user_id: userId, date: log.date, session_key: log.session,
+    label_snapshot: sessionName(log.session), completed_at: new Date().toISOString()
+  };
+  if (Number.isFinite(log.startedAt)) row.started_at = new Date(log.startedAt).toISOString();
   const { data: sess, error } = await supabase.from("workout_sessions")
-    .insert({
-      user_id: userId, date: log.date, session_key: log.session,
-      label_snapshot: sessionName(log.session), completed_at: new Date().toISOString()
-    })
+    .insert(row)
     .select("id").single();
   if (error) throw error;
 

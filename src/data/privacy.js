@@ -41,6 +41,9 @@ export function loadPrivacy(userId) {
 }
 // called once the owner's profile has loaded
 export function applyCloudPrivacy(cloud) {
+  // the column exists but was never written (nobody touched a toggle): save this
+  // device's settings so the cloud record says what the app is actually doing
+  if (cloud === null && !pending && _uid) { pending = true; writeLocal(); push(); return; }
   if (pending || !cloud || typeof cloud !== "object") return;
   active = { ...DEFAULTS, ...cloud };
   writeLocal();
