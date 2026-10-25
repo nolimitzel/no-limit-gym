@@ -572,7 +572,9 @@ export function initTracker() {
         // last session's number stays visible in the corner once a box is typed in
         w.parentElement?.classList.toggle("typed", !!w.value);
         r.parentElement?.classList.toggle("typed", !!r.value);
-        const vs = !cardio && filled && row.dataset.gr != null
+        // no verdict while the weight box is still blank on a loaded lift (reps often go in first)
+        const waitingForWeight = !w.value && Number(row.dataset.gw) > 0;
+        const vs = !cardio && filled && row.dataset.gr != null && !waitingForWeight
           ? H.compareSet({ w: w.value, r: r.value }, { w: row.dataset.gw, r: row.dataset.gr }) : null;
         row.classList.toggle("vs-up", vs === "up");
         row.classList.toggle("vs-same", vs === "same");

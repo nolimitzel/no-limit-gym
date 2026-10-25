@@ -98,3 +98,10 @@ test("compareSet: progress vs the same set last session", () => {
   assert.equal(compareSet({ w: 60, r: "" }, { w: 60, r: 8 }), null);
   assert.equal(compareSet(null, { w: 60, r: 8 }), null);
 });
+
+test("compareSet edge cases", () => {
+  assert.equal(compareSet({ w: 0, r: 12 }, { w: 0, r: 12 }), "same");      // bodyweight matched
+  assert.equal(compareSet({ w: 0, r: 10 }, { w: 0, r: 12 }), "down");
+  assert.equal(compareSet({ w: 60, r: 8 }, { w: 60, r: 0 }), null);        // no reps last time
+  assert.equal(compareSet({ w: "", r: 8 }, { w: 60, r: 8 }), "down");      // blank weight reads as 0 kg (the app waits instead)
+});
