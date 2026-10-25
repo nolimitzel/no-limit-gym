@@ -484,12 +484,17 @@ export function initTracker() {
         <span id="tp-s">0 sets logged</span></div><div class="tp-bar"><i id="tp-bar"></i></div>
         <div class="tp-foot"><span class="tp-save" id="tp-save">${existing ? "Saved" : "Saves as you type"}</span>
           <button class="tp-add" data-act="axopen">+ Add exercise</button></div></div>`;
+    // a superset is one joined block: header, its exercises with "no rest" links, and its own add button
     const labs = supersetLabels(s.exercises);
     html += `<div id="tr-list">${s.exercises.map(ex => {
       const lab = labs[ex.id];
-      const head = lab && lab.pos === 1
-        ? `<div class="ss-head"><b>Superset ${lab.letter}</b><span>No rest between · rest after the last one</span></div>` : "";
-      return head + exCardHtml(ex, existing, today, lab);
+      if (!lab) return exCardHtml(ex, existing, today);
+      const lastName = s.exercises.find(x => x.ss === ex.ss && labs[x.id].last)?.name || "";
+      const open = lab.pos === 1 ? `<div class="ss-group">
+          <div class="ss-head">${LINK_ICON}<b>Superset ${lab.letter}</b><span>Back to back · rest after ${esc(lastName)}</span></div>` : "";
+      const join = lab.last ? "" : `<div class="ss-join"><span>no rest</span></div>`;
+      const close = lab.last ? `<button class="ss-more" data-act="sspair" data-ex="${esc(ex.id)}">+ Add to superset ${lab.letter}</button></div>` : "";
+      return open + exCardHtml(ex, existing, today, lab) + join + close;
     }).join("")}</div>`;
     html += s.exercises.length ? "" : `<button class="ax-empty glass" data-act="axopen">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -522,24 +527,26 @@ export function initTracker() {
       ? `Last time · ${esc(shortDate(last.date))} <b>${last.sets.map(x => `${x.w}×${x.r}`).join("  ")}</b>`
       : `No history yet — set your baseline.`;
     const ssCls = lab ? ` in-ss${lab.pos === 1 ? " ss-first" : ""}${lab.last ? " ss-last" : ""}` : "";
-    const ssBtns = !lab
-      ? `<button class="ss-btn" data-act="sspair" data-ex="${esc(ex.id)}">Superset</button>`
-      : `${lab.last ? `<button class="ss-btn" data-act="sspair" data-ex="${esc(ex.id)}">+ Add to superset</button>` : ""}<button class="ss-btn" data-act="ssunlink" data-ex="${esc(ex.id)}">Unlink</button>`;
+    const ssBtn = lab
+      ? `<button class="ex-ss on" data-act="ssunlink" data-ex="${esc(ex.id)}" aria-label="Take out of the superset">${UNLINK_ICON}</button>`
+      : `<button class="ex-ss" data-act="sspair" data-ex="${esc(ex.id)}" aria-label="Superset with another exercise">${LINK_ICON}</button>`;
     return `<div class="ex${ssCls}" data-ex="${esc(ex.id)}"${lab ? ` data-ss="${esc(ex.ss)}"` : ""}>
       <div class="ex-h">
         <div class="info"><b class="ex-link" data-act="exhist" data-ex="${esc(ex.id)}">${lab ? `<span class="ss-tag">${lab.letter}${lab.pos}</span>` : ""}${esc(ex.name)}${ex.isNew ? '<span class="tag-new">NEW</span>' : ""}</b>
           <div class="meta">${esc(ex.target || "")}${editBtn(ex.id)}</div></div>
         <div class="tgt">${esc(ex.reps || "")} reps<small>${esc(ex.sets || 3)} sets</small></div>
-        <button class="ex-rm" data-act="exrm" data-ex="${esc(ex.id)}" aria-label="Remove from today">${XMARK}</button>
+        ${ssBtn}<button class="ex-rm" data-act="exrm" data-ex="${esc(ex.id)}" aria-label="Remove from today">${XMARK}</button>
       </div>
       <div class="last">${lastTxt}</div>
       <div class="sets">
         <div class="set-head"><span>Set</span><span>Weight (kg)</span><span>Reps</span><span></span></div>
         <div class="rows">${rows}</div>
       </div>
-      <div class="ex-foot"><div class="addset" data-act="addset" data-ex="${esc(ex.id)}">+ Add set</div><span class="ss-acts">${ssBtns}</span></div>
+      <div class="addset" data-act="addset" data-ex="${esc(ex.id)}">+ Add set</div>
     </div>`;
   }
+  const LINK_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+  const UNLINK_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 13.5l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M8.5 10.5l-3 3a4 4 0 0 0 5.7 5.7l1-1"/><path d="M4 4l16 16"/></svg>';
   const XMARK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
   /* Live workout progress: a set counts once its reps (cardio: minutes or rounds)
@@ -706,7 +713,7 @@ export function initTracker() {
   const DKEY = "gymtracker.day:" + (cachedUser()?.id || "local");
   function readDay() { try { const d = JSON.parse(localStorage.getItem(DKEY) || "null"); return d && d.date === todayStr() ? d : { date: todayStr(), lists: {} }; } catch { return { date: todayStr(), lists: {} }; } }
   function persistDay() {
-    const d = { date: todayStr(), lists: {} };
+    const d = readDay();             // keep today's lists for sessions not loaded right now
     Object.entries(DAYSESS).forEach(([k, v]) => { d.lists[k] = v.exercises; });
     try { localStorage.setItem(DKEY, JSON.stringify(d)); } catch {}
   }
@@ -817,8 +824,11 @@ export function initTracker() {
      never push it away. Sized to the visible viewport (above the keyboard). If
      nothing matches, "add it as a new exercise" sits directly under the search. */
   let AX_GROUP = null;
-  function openAddSheet() {
+  let SS_ANCHOR = null;            // "Superset" → add a new exercise: pair it with this one
+  // every open sets the pairing target (or clears a stale one), however the sheet last closed
+  function openAddSheet(pairWith) {
     closeAddSheet();
+    SS_ANCHOR = pairWith || null;
     const groups = groupsOf(ACTIVE);
     AX_GROUP = groups[0] || null;
     const ov = document.createElement("div"); ov.className = "axs"; ov.id = "axs";
@@ -861,9 +871,9 @@ export function initTracker() {
     }).join("");
     document.getElementById("axs-body").scrollTop = 0;
   }
-  let SS_ANCHOR = null;            // "Superset" → add a new exercise: pair it with this one
   function addToWorkout(ex) {
     const s = daySession(ACTIVE);
+    if (SS_ANCHOR && ex.cardio) { SS_ANCHOR = null; toast("Cardio can't be part of a superset — added on its own"); }
     if (SS_ANCHOR) {
       const anchor = SS_ANCHOR; SS_ANCHOR = null;
       if (!s.exercises.some(x => x.id === ex.id)) s.exercises.push(ex);
@@ -1374,7 +1384,7 @@ export function initTracker() {
     if (card.dataset.ss) {
       const group = [...document.querySelectorAll(`#view .ex[data-ss="${CSS.escape(card.dataset.ss)}"]`)];
       const i = group.indexOf(card);
-      if (i >= 0 && i < group.length - 1) { stopRest(); group[i + 1].scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+      if (i >= 0 && i < group.length - 1) { group[i + 1].scrollIntoView({ behavior: "smooth", block: "start" }); return; }
       const sec = Math.max(...group.map(c => H.restSecondsFor(exMeta(c.dataset.ex).reps)));
       startRest(sec, "Superset");
       group[0]?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2476,10 +2486,19 @@ export function initTracker() {
     else if (act === "exrm") {
       // today only — the usual list is edited in Plan, and logged sets are only saved on Save
       const s = daySession(ACTIVE);
-      const wasSS = !!s.exercises.find(x => x.id === el.dataset.ex)?.ss;
-      s.exercises = normalizeSupersets(s.exercises.filter(x => x.id !== el.dataset.ex));
+      const id = el.dataset.ex;
+      const wasSS = !!s.exercises.find(x => x.id === id)?.ss;
+      s.exercises = normalizeSupersets(s.exercises.filter(x => x.id !== id));
       persistDay();
       el.closest(".ex")?.remove();
+      // its sets leave the saved workout too, even when nothing else is logged
+      // (autosave skips an empty workout, so the old copy would bring it back)
+      const log = getLog(todayStr(), ACTIVE);
+      if (log && log.entries[id]) {
+        const { [id]: _gone, ...rest } = log.entries;
+        const rec = upsertLog(todayStr(), ACTIVE, rest);
+        pushRecord("log", rec);
+      }
       if (wasSS) { scheduleAutosave(); rerenderTrain(); return; }   // save the removal, then relabel the group
       document.getElementById("tp-of").textContent = s.exercises.length;
       paintTrainProgress();
@@ -2493,7 +2512,7 @@ export function initTracker() {
       persistDay(); closeSheet(); rerenderTrain();
       toast("Superset set — no rest between them");
     }
-    else if (act === "ssnew") { closeSheet(); SS_ANCHOR = el.dataset.a; openAddSheet(); }
+    else if (act === "ssnew") { closeSheet(); openAddSheet(el.dataset.a); }
     else if (act === "ssunlink") {
       const s = daySession(ACTIVE);
       s.exercises = unlinkSuperset(s.exercises, el.dataset.ex);
@@ -2509,7 +2528,8 @@ export function initTracker() {
       const name = (box.querySelector("#cx-name")?.value || "").trim();
       const group = box.querySelector(".ob-chip.on")?.dataset.g;
       if (!name) { toast("Give it a name"); return; }
-      updateCustomExercise(cachedUser()?.id, key, { name, group })
+      const hasLogs = DB.logs.some(l => l.entries && l.entries[key] && l.entries[key].length);
+      updateCustomExercise(cachedUser()?.id, key, { name, group }, { hasLogs })
         .then(c => {
           Object.values(DAYSESS).forEach(sx => {
             sx.exercises.forEach(x => {
@@ -2522,7 +2542,8 @@ export function initTracker() {
           persistDay(); box.remove(); toast("Exercise updated");
           rerenderTrain();
         })
-        .catch(e => toast(e?.message === "duplicate" ? `You already have “${name}” in ${group}` : "Couldn't save — try again"));
+        .catch(e => toast(e?.message === "duplicate" ? `You already have “${name}” in ${group}`
+          : e?.message === "cardio-lock" ? "It has logged sets — it can't switch between cardio and weights" : "Couldn't save — try again"));
     }
     else if (act === "restskip") stopRest();
     else if (act === "restadj" && REST) {

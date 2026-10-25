@@ -1084,19 +1084,29 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .pl-open{display:block;margin:12px 4px 0;text-align:center;text-decoration:none}
 #soundtrack{scroll-margin-top:96px}
 
-/* ---- supersets: grouped cards, A1/A2 tags, rest only after the last ---- */
-.ss-head{display:flex;align-items:baseline;gap:10px;margin:18px 4px 8px}
-.ss-head b{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink)}
-.ss-head span{font-size:11.5px;color:var(--muted)}
-.ex.in-ss{position:relative;border-left:3px solid rgba(255,255,255,.55);margin-bottom:6px}
-.ex.in-ss.ss-last{margin-bottom:18px}
+/* ---- supersets: one joined block, "no rest" links, tagged sets; rest only after the last ---- */
+.ss-group{margin:4px 0 14px;padding:12px 10px 10px;border-radius:24px;
+  background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.03));
+  border:1px solid rgba(255,255,255,.22);box-shadow:var(--glass-hi),0 14px 34px rgba(0,0,0,.38)}
+.ss-head{display:flex;align-items:center;gap:8px;padding:0 6px 10px;color:var(--ink)}
+.ss-head svg{flex-shrink:0}
+.ss-head b{font-size:11px;text-transform:uppercase;letter-spacing:.12em;white-space:nowrap;flex-shrink:0}
+.ss-head span{flex:1;margin-left:6px;font-size:11px;color:var(--muted);text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ss-group .ex{margin-bottom:0;background:rgba(0,0,0,.22)}
+.ss-join{display:flex;justify-content:center;position:relative;height:26px}
+.ss-join::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:rgba(255,255,255,.35)}
+.ss-join span{position:relative;align-self:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--ink);background:#1b1d1a;border:1px solid rgba(255,255,255,.22);border-radius:99px;padding:2px 9px}
+.ss-more{display:block;width:100%;margin-top:10px;padding:10px;border-radius:14px;font-size:12px;font-weight:700;
+  color:var(--muted);border:1px dashed rgba(255,255,255,.2);background:none}
 .ss-tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 6px;margin-right:8px;border-radius:6px;
-  background:rgba(255,255,255,.12);color:var(--ink);vertical-align:2px}
-.ex-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-right:12px}
-.ss-acts{display:flex;gap:6px;padding-top:6px}
-.ss-btn{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
-  padding:6px 10px;border:1px solid var(--glass-brd);border-radius:10px;background:var(--glass2)}
-.ss-btn:active{border-color:rgba(255,255,255,.35)}
+  background:var(--ink);color:#0A0B0A;vertical-align:2px}
+.ex-ss{width:28px;height:28px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.ex-ss.on{color:var(--ink);background:rgba(255,255,255,.1)}
+.ex-ss:active{transform:scale(.9)}
+/* sets inside a superset: numbers sit in a filled chip so the block reads differently at a glance */
+.in-ss .set-row .sn{width:24px;height:24px;margin:0 auto;border-radius:8px;background:rgba(255,255,255,.08);font-size:12px}
+.in-ss .set-row.filled .sn{background:var(--ink);color:#0A0B0A}
 /* edit your own exercise */
 .ex-edit{font:inherit;font-size:inherit;color:var(--ink);text-decoration:underline;text-underline-offset:2px;text-transform:inherit;letter-spacing:inherit;padding:0}
 .cx-groups{margin-top:6px}

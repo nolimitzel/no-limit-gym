@@ -60,3 +60,34 @@ test("bad input is safe", () => {
   assert.equal(order(unlinkSuperset(ex("a"), "a")), "a");
   assert.deepEqual(supersetLabels(null), {});
 });
+
+test("cardio is never part of a superset", () => {
+  const l = [{ id: "a" }, { id: "run", cardio: true }, { id: "b" }];
+  assert.equal(groups(linkSuperset(l, "a", "run")), "-,-,-");
+  assert.equal(groups(normalizeSupersets([{ id: "a", ss: "x" }, { id: "run", cardio: true, ss: "x" }])), "-,-");
+});
+
+test("linking an exercise out of another group moves it and leaves that group valid", () => {
+  let l = linkSuperset(ex("a", "b", "c", "d", "e"), "a", "b");      // A: a,b
+  l = linkSuperset(l, "c", "d");                                    // B: c,d
+  l = linkSuperset(l, "a", "d");                                    // d leaves B for A
+  assert.equal(order(l), "a,b,d,c,e");
+  assert.equal(groups(l).split(",").slice(0, 3).every((g) => g === l[0].ss), true);
+  assert.equal(l[3].ss, undefined);                                 // c alone → no longer a superset
+});
+
+test("unlinking the first or middle of a tri-set keeps the other two together", () => {
+  const tri = () => linkSuperset(linkSuperset(ex("a", "b", "c", "z"), "a", "b"), "a", "c");
+  const first = unlinkSuperset(tri(), "a");
+  assert.equal(order(first), "b,c,a,z");
+  assert.equal(groups(first), "ss1,ss1,-,-");
+  const mid = unlinkSuperset(tri(), "b");
+  assert.equal(order(mid), "a,c,b,z");
+});
+
+test("inputs are never mutated", () => {
+  const input = ex("a", "b");
+  const snapshot = JSON.stringify(input);
+  linkSuperset(input, "a", "b"); unlinkSuperset(input, "a"); normalizeSupersets(input); supersetLabels(input);
+  assert.equal(JSON.stringify(input), snapshot);
+});

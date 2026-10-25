@@ -11,9 +11,10 @@ const newId = (list) => {
   return "ss" + n;
 };
 
-// keep groups contiguous and drop any "superset" of one
+// keep groups contiguous, keep cardio out, and drop any "superset" of one
 export function normalizeSupersets(list) {
   const out = (list || []).map((e) => ({ ...e }));
+  out.forEach((e) => { if (e.cardio) delete e.ss; });
   const seen = new Set();
   for (let i = 0; i < out.length; i++) {
     const id = out[i].ss;
@@ -36,7 +37,7 @@ export function linkSuperset(list, anchorId, otherId) {
   const src = normalizeSupersets(list);
   const anchor = src.find((e) => e.id === anchorId);
   const other = src.find((e) => e.id === otherId);
-  if (!anchor || !other) return src;
+  if (!anchor || !other || anchor.cardio || other.cardio) return src;
   const ss = anchor.ss || newId(src);
   const rest = src.filter((e) => e.id !== otherId).map((e) => (e.id === anchorId ? { ...e, ss } : e));
   let at = rest.findIndex((e) => e.id === anchorId);
