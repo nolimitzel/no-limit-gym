@@ -62,3 +62,22 @@ export async function addCustomExercise(userId, { name, group, equipment }) {
   }
   return withMeta(ex);
 }
+
+// Fix a custom exercise's name or muscle group. The key never changes, so every
+// logged set stays linked. Marked unsynced so the edit wins over the old cloud
+// copy (core/sync.js) until the upload confirms it.
+export async function updateCustomExercise(userId, key, { name, group }) {
+  const ex = _custom.find(c => c.key === key);
+  if (!ex) throw new Error("not-found");
+  const nm = (name || "").trim();
+  if (!nm) throw new Error("no-name");
+  const grp = group || ex.group;
+  if (_custom.some(c => c.key !== key && c.group === grp && c.name.toLowerCase() === nm.toLowerCase())) throw new Error("duplicate");
+  ex.name = nm; ex.group = grp; ex.synced = false;
+  persistLocal();
+  if (supabase && userId) {
+    upload(userId, ex).then(() => { ex.synced = true; persistLocal(); })
+      .catch((e) => console.warn("[NO LIMIT] exercise edit kept on this device; cloud sync pending", e?.message || e));
+  }
+  return withMeta(ex);
+}

@@ -18,7 +18,8 @@ import { libExercise, EXERCISE_LIBRARY, MUSCLE_GROUPS } from "./data/exerciseLib
 import { FOOD_LIBRARY, FOOD_CATS, libFood, STARTER_MEALS } from "./data/foods.js";
 import { SUPP_LIBRARY, SUPP_CATS, libSupp, ESSENTIALS } from "./data/supplements.js";
 import { mealTotals, foodMacros, PORTIONS, portionLabel, suppAdherence } from "./core/nutrition.js";
-import { getCustomExercises, addCustomExercise } from "./data/customExercises.js";
+import { getCustomExercises, addCustomExercise, updateCustomExercise } from "./data/customExercises.js";
+import { normalizeSupersets, linkSuperset, unlinkSuperset, supersetLabels } from "./core/superset.js";
 import { getCurrentSquad, setCurrentSquad, postActivity, getMyWorkoutPosts, getFeed, getWorkoutPosts, toggleReaction, REACTIONS,
   getChallenges, createChallenge, deleteChallenge } from "./data/social.js";
 import { getPrivacy, setPrivacy, applyCloudPrivacy } from "./data/privacy.js";
@@ -483,7 +484,13 @@ export function initTracker() {
         <span id="tp-s">0 sets logged</span></div><div class="tp-bar"><i id="tp-bar"></i></div>
         <div class="tp-foot"><span class="tp-save" id="tp-save">${existing ? "Saved" : "Saves as you type"}</span>
           <button class="tp-add" data-act="axopen">+ Add exercise</button></div></div>`;
-    html += `<div id="tr-list">${s.exercises.map(ex => exCardHtml(ex, existing, today)).join("")}</div>`;
+    const labs = supersetLabels(s.exercises);
+    html += `<div id="tr-list">${s.exercises.map(ex => {
+      const lab = labs[ex.id];
+      const head = lab && lab.pos === 1
+        ? `<div class="ss-head"><b>Superset ${lab.letter}</b><span>No rest between · rest after the last one</span></div>` : "";
+      return head + exCardHtml(ex, existing, today, lab);
+    }).join("")}</div>`;
     html += s.exercises.length ? "" : `<button class="ax-empty glass" data-act="axopen">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         <b>Add your first exercise</b><small>Search the library, or add your own</small></button>`;
@@ -497,7 +504,9 @@ export function initTracker() {
     if (!s.exercises.length) openAddSheet();
   }
 
-  function exCardHtml(ex, existing, today) {
+  const isCustomEx = (id) => getCustomExercises().some(c => c.key === id);
+  const editBtn = (id) => isCustomEx(id) ? ` · <button class="ex-edit" data-act="cxedit" data-ex="${esc(id)}">Edit</button>` : "";
+  function exCardHtml(ex, existing, today, lab) {
     if (ex.cardio) return cardioCardHtml(ex, existing);
     const last = lastSetsFor(ex.id, today);
     // Values only when continuing a workout already saved today;
@@ -512,10 +521,14 @@ export function initTracker() {
     const lastTxt = last
       ? `Last time · ${esc(shortDate(last.date))} <b>${last.sets.map(x => `${x.w}×${x.r}`).join("  ")}</b>`
       : `No history yet — set your baseline.`;
-    return `<div class="ex" data-ex="${esc(ex.id)}">
+    const ssCls = lab ? ` in-ss${lab.pos === 1 ? " ss-first" : ""}${lab.last ? " ss-last" : ""}` : "";
+    const ssBtns = !lab
+      ? `<button class="ss-btn" data-act="sspair" data-ex="${esc(ex.id)}">Superset</button>`
+      : `${lab.last ? `<button class="ss-btn" data-act="sspair" data-ex="${esc(ex.id)}">+ Add to superset</button>` : ""}<button class="ss-btn" data-act="ssunlink" data-ex="${esc(ex.id)}">Unlink</button>`;
+    return `<div class="ex${ssCls}" data-ex="${esc(ex.id)}"${lab ? ` data-ss="${esc(ex.ss)}"` : ""}>
       <div class="ex-h">
-        <div class="info"><b class="ex-link" data-act="exhist" data-ex="${esc(ex.id)}">${esc(ex.name)}${ex.isNew ? '<span class="tag-new">NEW</span>' : ""}</b>
-          <div class="meta">${esc(ex.target || "")}</div></div>
+        <div class="info"><b class="ex-link" data-act="exhist" data-ex="${esc(ex.id)}">${lab ? `<span class="ss-tag">${lab.letter}${lab.pos}</span>` : ""}${esc(ex.name)}${ex.isNew ? '<span class="tag-new">NEW</span>' : ""}</b>
+          <div class="meta">${esc(ex.target || "")}${editBtn(ex.id)}</div></div>
         <div class="tgt">${esc(ex.reps || "")} reps<small>${esc(ex.sets || 3)} sets</small></div>
         <button class="ex-rm" data-act="exrm" data-ex="${esc(ex.id)}" aria-label="Remove from today">${XMARK}</button>
       </div>
@@ -524,7 +537,7 @@ export function initTracker() {
         <div class="set-head"><span>Set</span><span>Weight (kg)</span><span>Reps</span><span></span></div>
         <div class="rows">${rows}</div>
       </div>
-      <div class="addset" data-act="addset" data-ex="${esc(ex.id)}">+ Add set</div>
+      <div class="ex-foot"><div class="addset" data-act="addset" data-ex="${esc(ex.id)}">+ Add set</div><span class="ss-acts">${ssBtns}</span></div>
     </div>`;
   }
   const XMARK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -605,7 +618,7 @@ export function initTracker() {
     const meta = ex.id === "hiit" ? P.cardio.protocol : (ex.target || "Cardio");
     return `<div class="ex cardio" data-ex="${ex.id}">
       <div class="ex-h">
-        <div class="info"><b class="ex-link" data-act="exhist" data-ex="${ex.id}">${esc(ex.name)}</b><div class="meta">${esc(meta)}</div></div>
+        <div class="info"><b class="ex-link" data-act="exhist" data-ex="${ex.id}">${esc(ex.name)}</b><div class="meta">${esc(meta)}${editBtn(ex.id)}</div></div>
         <div class="tgt">${esc(ex.reps)}<small>cardio</small></div>
         <button class="ex-rm" data-act="exrm" data-ex="${esc(ex.id)}" aria-label="Remove from today">${XMARK}</button>
       </div>
@@ -699,9 +712,24 @@ export function initTracker() {
   }
   function daySession(key) {
     if (DAYSESS[key]) return DAYSESS[key];
-    const s = buildSession(key);
-    (readDay().lists[key] || []).forEach(ex => { if (ex && ex.id && !s.exercises.some(x => x.id === ex.id)) s.exercises.push(ex); });
-    return (DAYSESS[key] = s);
+    // today's list in the order it was built (with superset links), then anything
+    // logged that the saved list doesn't have
+    const built = buildSession(key).exercises, out = [];
+    (readDay().lists[key] || []).forEach(ex => {
+      if (!ex || !ex.id || out.some(x => x.id === ex.id)) return;
+      const b = built.find(x => x.id === ex.id);
+      out.push(b ? { ...b, ...(ex.ss ? { ss: ex.ss } : {}) } : ex);
+    });
+    built.forEach(b => { if (!out.some(x => x.id === b.id)) out.push(b); });
+    return (DAYSESS[key] = { exercises: normalizeSupersets(out) });
+  }
+  // redraw Train after a reorder/relabel, keeping what's typed and the scroll position
+  function rerenderTrain() {
+    if (TAB !== "train" || !ACTIVE) return;
+    flushAutosave();
+    const y = window.scrollY;
+    renderTrain();
+    window.scrollTo(0, y);
   }
   function startQuick() { ACTIVE = "quick"; go("train"); }
   function saveProgrammeQuiet() {
@@ -833,8 +861,19 @@ export function initTracker() {
     }).join("");
     document.getElementById("axs-body").scrollTop = 0;
   }
+  let SS_ANCHOR = null;            // "Superset" → add a new exercise: pair it with this one
   function addToWorkout(ex) {
     const s = daySession(ACTIVE);
+    if (SS_ANCHOR) {
+      const anchor = SS_ANCHOR; SS_ANCHOR = null;
+      if (!s.exercises.some(x => x.id === ex.id)) s.exercises.push(ex);
+      s.exercises = linkSuperset(s.exercises, anchor, ex.id);
+      persistDay();
+      closeAddSheet();
+      rerenderTrain();
+      document.querySelector(`#tr-list .ex[data-ex="${CSS.escape(ex.id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     const dupe = s.exercises.some(x => x.id === ex.id);
     if (!dupe) {
       s.exercises.push(ex);
@@ -1219,6 +1258,40 @@ export function initTracker() {
     return L.join("\n");
   }
   /* ---------- per-exercise history (bottom sheet — never leaves an unsaved workout) ---------- */
+  /* Superset: pick a partner from today's list, or add a new exercise to pair */
+  function openSupersetSheet(anchorId) {
+    const s = daySession(ACTIVE);
+    const anchor = s.exercises.find(x => x.id === anchorId); if (!anchor) return;
+    const labs = supersetLabels(s.exercises);
+    const options = s.exercises.filter(x => x.id !== anchorId && !x.cardio && (!anchor.ss || x.ss !== anchor.ss));
+    const rows = options.map(x => `<button class="ns-row" data-act="sspick" data-a="${esc(anchorId)}" data-b="${esc(x.id)}">
+        <span><b>${esc(x.name)}</b><small>${esc(x.target || "")}${labs[x.id] ? ` · now in superset ${labs[x.id].letter}` : ""}</small></span><i>+</i></button>`).join("");
+    openSheet(`Superset with ${anchor.name}`, `
+      <p class="sq-ihint" style="margin:6px 6px 12px">Do them back to back, then rest. Pick one from today's workout or add a new one.</p>
+      ${rows || `<div class="empty" style="padding:14px 6px">No other exercises in today's workout yet.</div>`}
+      <button class="btn ghost" data-act="ssnew" data-a="${esc(anchorId)}" style="margin-top:12px">+ Add a new exercise to pair</button>`);
+  }
+  /* Fix a mistake in an exercise you created (name or muscle group). History stays
+     linked by key. Switching between cardio and weights is blocked once it has
+     logged sets, since cardio logs minutes/rounds instead of kg × reps. */
+  function openCustomEdit(key) {
+    const c = getCustomExercises().find(x => x.key === key); if (!c) return;
+    const logged = DB.logs.some(l => l.entries && l.entries[key] && l.entries[key].length);
+    const isC = c.group === "Cardio";
+    const chips = MUSCLE_GROUPS.map(g => {
+      const locked = logged && (g === "Cardio") !== isC;
+      return `<button type="button" class="ob-chip${g === c.group ? " on" : ""}" data-act="cxgrp" data-g="${esc(g)}"${locked ? " disabled" : ""}>${esc(g)}</button>`;
+    }).join("");
+    const ov = document.createElement("div"); ov.className = "modal";
+    ov.innerHTML = `<div class="modal-box"><div class="modal-head"><b>Edit exercise</b><span class="mx" data-act="closemodal">✕</span></div>
+      <label class="fld"><span>Name</span><input id="cx-name" value="${esc(c.name)}" maxlength="60" autocomplete="off"></label>
+      <div class="fld"><span>Muscle group</span></div>
+      <div class="ob-chips cx-groups">${chips}</div>
+      ${logged ? `<p class="sq-ihint" style="margin:10px 0 0">It has logged sets, so it can't switch between cardio and weights. Your history stays with it.</p>` : ""}
+      <button class="btn" data-act="cxsave" data-ex="${esc(key)}" style="width:100%;margin-top:16px">Save</button></div>`;
+    document.body.appendChild(ov);
+    setTimeout(() => { const i = document.getElementById("cx-name"); i?.focus(); i?.select(); }, 30);
+  }
   function openExerciseHistory(id) {
     const m = exMeta(id), cardio = isCardio(id), hist = H.exerciseSessions(DB.logs, id);
     const pr = cardio ? null : prFor(id);
@@ -1228,7 +1301,7 @@ export function initTracker() {
     const ov = document.createElement("div"); ov.className = "modal";
     ov.innerHTML = `<div class="modal-box xh">
       <div class="modal-head"><b>${esc(m.name)}</b><span class="mx" data-act="closemodal">✕</span></div>
-      <div class="xh-sub">${esc(m.target || "")}${m.custom ? " · your exercise" : ""}</div>
+      <div class="xh-sub">${esc(m.target || "")}${m.custom ? ` · your exercise · <button class="ex-edit" data-act="cxedit" data-ex="${esc(id)}">Edit</button>` : ""}</div>
       <div class="xh-stats">
         <div><span>${cardio ? "Sessions" : "Best set"}</span><b>${cardio ? hist.length : (pr ? esc(fmtSet(pr)) : "—")}</b></div>
         <div><span>Last done</span><b>${esc(agoTxt)}</b></div>
@@ -1297,6 +1370,16 @@ export function initTracker() {
     if (!r.classList || !r.classList.contains("r") || !r.value) return;
     const card = r.closest(".ex");
     if (!card || card.classList.contains("cardio")) return;
+    // superset: straight on to the next exercise; rest only after the last one
+    if (card.dataset.ss) {
+      const group = [...document.querySelectorAll(`#view .ex[data-ss="${CSS.escape(card.dataset.ss)}"]`)];
+      const i = group.indexOf(card);
+      if (i >= 0 && i < group.length - 1) { stopRest(); group[i + 1].scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+      const sec = Math.max(...group.map(c => H.restSecondsFor(exMeta(c.dataset.ex).reps)));
+      startRest(sec, "Superset");
+      group[0]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     const m = exMeta(card.dataset.ex);
     startRest(H.restSecondsFor(m.reps), m.name);
   });
@@ -2232,7 +2315,7 @@ export function initTracker() {
     }
     else if (act === "tgo") { if (startPicked() && !getLog(todayStr(), ACTIVE)) maybeAutoplay(); }
     else if (act === "axopen") openAddSheet();
-    else if (act === "axclose") closeAddSheet();
+    else if (act === "axclose") { SS_ANCHOR = null; closeAddSheet(); }
     else if (act === "axgrp") { AX_GROUP = el.dataset.g; el.parentElement.querySelectorAll(".axn-c").forEach(c => c.classList.toggle("on", c === el)); document.getElementById("ax-q")?.focus(); }
     else if (act === "axadd") { const ex = toEx(el.dataset.k); if (ex) addToWorkout(ex); }
     else if (act === "axcreate") {
@@ -2393,14 +2476,54 @@ export function initTracker() {
     else if (act === "exrm") {
       // today only — the usual list is edited in Plan, and logged sets are only saved on Save
       const s = daySession(ACTIVE);
-      s.exercises = s.exercises.filter(x => x.id !== el.dataset.ex);
+      const wasSS = !!s.exercises.find(x => x.id === el.dataset.ex)?.ss;
+      s.exercises = normalizeSupersets(s.exercises.filter(x => x.id !== el.dataset.ex));
       persistDay();
       el.closest(".ex")?.remove();
+      if (wasSS) { scheduleAutosave(); rerenderTrain(); return; }   // save the removal, then relabel the group
       document.getElementById("tp-of").textContent = s.exercises.length;
       paintTrainProgress();
       scheduleAutosave();
     }
     else if (act === "exhist") openExerciseHistory(el.dataset.ex);
+    else if (act === "sspair") openSupersetSheet(el.dataset.ex);
+    else if (act === "sspick") {
+      const s = daySession(ACTIVE);
+      s.exercises = linkSuperset(s.exercises, el.dataset.a, el.dataset.b);
+      persistDay(); closeSheet(); rerenderTrain();
+      toast("Superset set — no rest between them");
+    }
+    else if (act === "ssnew") { closeSheet(); SS_ANCHOR = el.dataset.a; openAddSheet(); }
+    else if (act === "ssunlink") {
+      const s = daySession(ACTIVE);
+      s.exercises = unlinkSuperset(s.exercises, el.dataset.ex);
+      persistDay(); rerenderTrain();
+    }
+    else if (act === "cxedit") { el.closest(".modal")?.remove(); openCustomEdit(el.dataset.ex); }
+    else if (act === "cxgrp") {
+      if (el.disabled) return;
+      el.parentElement.querySelectorAll(".ob-chip").forEach(c => c.classList.toggle("on", c === el));
+    }
+    else if (act === "cxsave") {
+      const key = el.dataset.ex, box = el.closest(".modal");
+      const name = (box.querySelector("#cx-name")?.value || "").trim();
+      const group = box.querySelector(".ob-chip.on")?.dataset.g;
+      if (!name) { toast("Give it a name"); return; }
+      updateCustomExercise(cachedUser()?.id, key, { name, group })
+        .then(c => {
+          Object.values(DAYSESS).forEach(sx => {
+            sx.exercises.forEach(x => {
+              if (x.id !== key) return;
+              x.name = c.name; x.target = c.group;
+              if (c.cardio) { x.cardio = true; delete x.ss; } else delete x.cardio;   // cardio isn't part of supersets
+            });
+            sx.exercises = normalizeSupersets(sx.exercises);
+          });
+          persistDay(); box.remove(); toast("Exercise updated");
+          rerenderTrain();
+        })
+        .catch(e => toast(e?.message === "duplicate" ? `You already have “${name}” in ${group}` : "Couldn't save — try again"));
+    }
     else if (act === "restskip") stopRest();
     else if (act === "restadj" && REST) {
       REST.endsAt += Number(el.dataset.d) * 1000;
