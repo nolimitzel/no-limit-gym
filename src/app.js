@@ -207,6 +207,9 @@ export function initTracker() {
   // photos live 4 weeks: quietly delete this user's expired files a few seconds after launch
   setTimeout(() => purgeExpiredPhotos(cachedUser()?.id), 5000);
   // history queries — pure + unit-tested, keyed by stable exercise key (core/history.js)
+  // a workout counts once it has a set: one emptied by removing its only exercise
+  // stays stored (so the removal syncs) but isn't a workout for rings, streaks or reports
+  const trainedLogs = () => DB.logs.filter(l => Object.values(l.entries || {}).some(x => x && x.length));
   const lastSetsFor = (exId, beforeDate) => H.lastSetsFor(DB.logs, exId, beforeDate);
   const allSetsFor = (exId) => H.allSetsFor(DB.logs, exId);
   const prFor = (exId, beforeDate) => H.prFor(DB.logs, exId, beforeDate);
@@ -401,7 +404,7 @@ export function initTracker() {
     // hero — the week's progress ring is the ONE volt element on this screen
     const days = weekBounds();
     const goal = goalNow();
-    const done = days.filter(d => DB.logs.some(l => l.date === d)).length;
+    const done = days.filter(d => trainedLogs().some(l => l.date === d)).length;
     const pct = Math.min(1, done / goal);
     const R = 52, C = 2 * Math.PI * R;
     const streak = myWeekStreak();
@@ -422,7 +425,7 @@ export function initTracker() {
       </div></div>`;
 
     // today's workout — white (not volt) action: the ring keeps the spotlight
-    const todays = DB.logs.filter(l => l.date === today);
+    const todays = trainedLogs().filter(l => l.date === today);
     const open = todays.find(l => l.done === false);          // started, not finished
     if (open) {
       const n = Object.keys(open.entries).length;
@@ -455,7 +458,7 @@ export function initTracker() {
     html += `<div class="h2-weekhd"><span>Your week</span><button data-act="weekedit">Schedule</button></div><div class="h2-week glass">`;
     days.forEach(d => {
       const ce = cycleFor(d);
-      const logs = DB.logs.filter(l => l.date === d);
+      const logs = trainedLogs().filter(l => l.date === d);
       const first = (k) => (oneName(comboParts(k)[0]) || "").split(" ")[0];
       const nm = logs.length ? first(logs[0].session) + (logs.length > 1 || comboParts(logs[0].session).length > 1 ? "+" : "")
         : ce.type === "train" && sess(ce.session) ? (sess(ce.session).name || "").split(" ")[0] : "";
@@ -514,10 +517,10 @@ export function initTracker() {
   function exCardHtml(ex, existing, today, lab) {
     if (ex.cardio) return cardioCardHtml(ex, existing);
     const last = lastSetsFor(ex.id, today);
-    // Values only when continuing a workout already saved today;
-    // otherwise last session's numbers appear as ghost placeholders to beat.
+    // Today's saved values fill the boxes; last session's numbers are the shadow in
+    // every set — as the placeholder while empty, and in the box's corner once typed.
     const saved = existing ? existing.entries[ex.id] : null;
-    const ghost = !existing && last ? last.sets : null;
+    const ghost = last ? last.sets : null;
     const nRows = Math.max(ex.sets || 3, saved ? saved.length : 0, ghost ? ghost.length : 0);
     let rows = "";
     for (let i = 0; i < nRows; i++) {
@@ -566,6 +569,14 @@ export function initTracker() {
         const w = row.querySelector(".w"), r = row.querySelector(".r");
         const filled = cardio ? !!(w.value || r.value) : !!r.value;
         row.classList.toggle("filled", filled);
+        // last session's number stays visible in the corner once a box is typed in
+        w.parentElement?.classList.toggle("typed", !!w.value);
+        r.parentElement?.classList.toggle("typed", !!r.value);
+        const vs = !cardio && filled && row.dataset.gr != null
+          ? H.compareSet({ w: w.value, r: r.value }, { w: row.dataset.gw, r: row.dataset.gr }) : null;
+        row.classList.toggle("vs-up", vs === "up");
+        row.classList.toggle("vs-same", vs === "same");
+        row.classList.toggle("vs-down", vs === "down");
         const sn = row.querySelector(".sn");
         if (sn) sn.innerHTML = filled ? TICK : (cardio ? "·" : String(i + 1));
         if (filled) done++;
@@ -611,10 +622,11 @@ export function initTracker() {
 
   function setRowHtml(exId, i, pv, ghost) {
     const phW = ghost ? ghost.w : "–", phR = ghost ? ghost.r : "–";
-    return `<div class="set-row">
+    const gAttr = ghost ? ` data-gw="${esc(ghost.w)}" data-gr="${esc(ghost.r)}"` : "";
+    return `<div class="set-row"${gAttr}>
       <span class="sn">${i + 1}</span>
-      <input class="w" type="number" inputmode="decimal" step="0.5" placeholder="${phW}" value="${pv ? pv.w : ""}">
-      <input class="r" type="number" inputmode="numeric" placeholder="${phR}" value="${pv ? pv.r : ""}">
+      <span class="gw" data-g="${ghost ? esc(ghost.w) : ""}"><input class="w" type="number" inputmode="decimal" step="0.5" placeholder="${phW}" value="${pv ? pv.w : ""}"></span>
+      <span class="gw" data-g="${ghost ? esc(ghost.r) : ""}"><input class="r" type="number" inputmode="numeric" placeholder="${phR}" value="${pv ? pv.r : ""}"></span>
       <span class="del" data-act="delset">✕</span></div>`;
   }
 
@@ -764,7 +776,7 @@ export function initTracker() {
     const sched = cycleFor(today);
     const sg = sched.type === "train" ? groupsOf(sched.session) : [];
     if (!PICKSEL.length && sg.length) PICKSEL = sg.map(groupKey);
-    const todays = DB.logs.filter(l => l.date === today);
+    const todays = trainedLogs().filter(l => l.date === today);
     let html = `<div class="section-label">Train · ${esc(shortDate(today))}</div>
       <h1 class="h-title">What are you training?</h1>
       <p class="h-sub">Pick one or combine a few, then add the exercises you're doing as you go.</p>`;
@@ -778,7 +790,7 @@ export function initTracker() {
     if (sg.length) html += `<p class="tr-sug">Your schedule says <b>${esc(sg.join(" + "))}</b> today — or pick anything.</p>`;
     html += `<div class="tc-grid">` + MUSCLE_GROUPS.map(g => {
       const k = groupKey(g);
-      const last = [...DB.logs].reverse().find(l => comboParts(l.session).includes(k));
+      const last = [...trainedLogs()].reverse().find(l => comboParts(l.session).includes(k));
       return `<button class="tc-chip glass${PICKSEL.includes(k) ? " on" : ""}" data-act="tchip" data-id="${k}">
         <b>${esc(g)}</b><small>${last ? "Last: " + esc(shortDate(last.date)) : "Not trained yet"}</small></button>`;
     }).join("") + `</div>`;
@@ -981,7 +993,7 @@ export function initTracker() {
       <canvas class="wd-confetti" id="wd-confetti" aria-hidden="true"></canvas>
       <div class="wd-tick"><svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
       <h1 class="wd-h">Workout done</h1>
-      <p class="wd-sub">${esc(sessName(rec.session))} · ${esc(shortDate(rec.date))}. Well done${PROFILE?.name ? ", " + esc(PROFILE.name.split(" ")[0]) : ""} — that's ${goalNow() - Math.max(0, goalNow() - weekBounds().filter(d => DB.logs.some(l => l.date === d)).length)} of ${goalNow()} this week.</p>
+      <p class="wd-sub">${esc(sessName(rec.session))} · ${esc(shortDate(rec.date))}. Well done${PROFILE?.name ? ", " + esc(PROFILE.name.split(" ")[0]) : ""} — that's ${goalNow() - Math.max(0, goalNow() - weekBounds().filter(d => trainedLogs().some(l => l.date === d)).length)} of ${goalNow()} this week.</p>
       <div class="wd-stats glass">${stat(ids.length, "exercises")}${stat(sets, "sets")}${stat(vol >= 1000 ? (vol / 1000).toFixed(1) + "t" : vol + "kg", "volume")}${mins ? stat(mins + "m", "time") : ""}</div>
       ${prs.length ? `<div class="subhead">New personal records</div><div class="card">` + prs.map(p =>
         `<div class="pr-row"><span>${esc(exMeta(p.id)?.name || p.id)}</span><span class="v">${esc(fmtSet(p.best))}</span></div>`).join("") + `</div>` : ""}
@@ -1017,8 +1029,8 @@ export function initTracker() {
   /* ============================ PROGRESS ============================ */
   function renderProgress() {
     const today = todayStr();
-    const total = DB.logs.length;
-    const wk = DB.logs.filter(l => dayDiff(l.date, today) >= 0 && dayDiff(l.date, today) < 7).length;
+    const total = trainedLogs().length;
+    const wk = trainedLogs().filter(l => dayDiff(l.date, today) >= 0 && dayDiff(l.date, today) < 7).length;
     const bw = DB.body.length ? DB.body[DB.body.length - 1].weight : null;
     const dBw = DB.body.length > 1 ? +(DB.body[DB.body.length - 1].weight - DB.body[0].weight).toFixed(1) : null;
 
@@ -1077,7 +1089,7 @@ export function initTracker() {
 
   /* ============================ HISTORY ============================ */
   function renderHistory() {
-    const logs = DB.logs.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+    const logs = trainedLogs().sort((a, b) => (a.date < b.date ? 1 : -1));
     let html = `<div class="section-label">Your log</div><h1 class="h-title">History</h1>
       <p class="h-sub">Every session you've logged.</p>
       <button class="linkbtn" data-act="backprogress" style="margin-bottom:16px">‹ Back to progress</button>`;
@@ -1166,7 +1178,7 @@ export function initTracker() {
     days.forEach((d, i) => {
       const c = cycleFor(d);
       const planned = c.type === "train" && sess(c.session) ? sessName(c.session) : null;
-      const dayLogs = DB.logs.filter(l => l.date === d);
+      const dayLogs = trainedLogs().filter(l => l.date === d);
       if (dayLogs.length) {
         done++;
         const what = dayLogs.map(l => sessName(l.session)).join(" + ");
@@ -1185,7 +1197,7 @@ export function initTracker() {
 
     // Key lifts: this week's best set vs the all-time best BEFORE this week, for the
     // same exercise only — a different exercise is never reported as progress
-    const weekLogs = DB.logs.filter(l => days.indexOf(l.date) >= 0);
+    const weekLogs = trainedLogs().filter(l => days.indexOf(l.date) >= 0);
     const exWeek = {};
     weekLogs.forEach(l => Object.entries(l.entries).forEach(([id, sets]) => {
       if (isCardio(id) || !sets.length) return;
@@ -1838,7 +1850,7 @@ export function initTracker() {
 
   /* ============================ PROFILE ============================ */
   function myWeekStreak() {
-    const weeks = new Set(DB.logs.map(l => weekStartISO(parseYmd(l.date))));
+    const weeks = new Set(trainedLogs().map(l => weekStartISO(parseYmd(l.date))));
     if (!weeks.size) return 0;
     let streak = 0, cur = weekStartISO();
     if (weeks.has(cur)) streak++;
@@ -1858,13 +1870,13 @@ export function initTracker() {
     const uname = p.username ? "@" + p.username : "";
     const init = (name.trim()[0] || "?").toUpperCase();
 
-    const total = DB.logs.length;
+    const total = trainedLogs().length;
     const lifted = []; const seen = new Set();
     DB.logs.forEach(l => Object.keys(l.entries).forEach(id => { if (!seen.has(id) && !isCardio(id)) { seen.add(id); lifted.push(id); } }));
     const prCount = lifted.filter(id => !!prFor(id)).length;
     const streak = myWeekStreak();
     const bw = DB.body.length ? DB.body[DB.body.length - 1].weight : null;
-    const since = DB.logs.length ? DB.logs.map(l => l.date).sort()[0] : (u?.created_at || null);
+    const since = trainedLogs().length ? trainedLogs().map(l => l.date).sort()[0] : (u?.created_at || null);
     const sinceTxt = since ? (/^\d{4}-\d{2}-\d{2}$/.test(since) ? parseYmd(since) : new Date(since)).toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "—";
     const goalTxt = GOAL_LABELS[p.goal] || null;
     const mus = getMusic();
@@ -2332,7 +2344,11 @@ export function initTracker() {
       el.disabled = true; el.textContent = "Adding…";
       const nice = el.dataset.q.replace(/\s+/g, " ").replace(/(^|\s)\S/g, m => m.toUpperCase());
       addCustomExercise(cachedUser()?.id, { name: nice, group: AX_GROUP || "Chest" })
-        .then(c => { addToWorkout({ id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(c.cardio || c.group === "Cardio" ? { cardio: true } : {}) }); toast(`Added “${c.name}” — it's in your library now`); })
+        .then(c => {
+          const cardio = c.cardio || c.group === "Cardio", pairing = !!SS_ANCHOR;
+          addToWorkout({ id: c.key, name: c.name, target: c.group, sets: c.sets, reps: c.reps, custom: true, ...(cardio ? { cardio: true } : {}) });
+          if (!(cardio && pairing)) toast(`Added “${c.name}” — it's in your library now`);   // keep the "cardio can't superset" note
+        })
         .catch(() => { el.disabled = false; el.textContent = "Try again"; toast("Couldn't add that exercise"); });
     }
     else if (act === "finish") finishWorkout();
@@ -2554,13 +2570,24 @@ export function initTracker() {
     }
     else if (act === "addset") {
       const rows = document.querySelector(`.ex[data-ex="${el.dataset.ex}"] .rows`);
-      rows.insertAdjacentHTML("beforeend", setRowHtml(el.dataset.ex, rows.children.length, null));
+      const last = lastSetsFor(el.dataset.ex, todayStr());
+      rows.insertAdjacentHTML("beforeend", setRowHtml(el.dataset.ex, rows.children.length, null, last?.sets[rows.children.length] || null));
       paintTrainProgress();
     }
     else if (act === "delset") {
       const row = el.closest(".set-row"); const rows = row.parentElement;
       row.remove();
       [...rows.children].forEach((r, i) => r.querySelector(".sn").textContent = i + 1);
+      // shadows follow the set number: set 2 always shows last session's set 2
+      const exId = rows.closest(".ex")?.dataset.ex;
+      const last = exId && !rows.closest(".ex").classList.contains("cardio") ? lastSetsFor(exId, todayStr()) : null;
+      if (last) [...rows.children].forEach((r, i) => {
+        const g = last.sets[i] || null;
+        if (g) { r.dataset.gw = g.w; r.dataset.gr = g.r; } else { delete r.dataset.gw; delete r.dataset.gr; }
+        const [gw, gr] = r.querySelectorAll(".gw");
+        if (gw) { gw.dataset.g = g ? g.w : ""; gw.querySelector("input").placeholder = g ? g.w : "–"; }
+        if (gr) { gr.dataset.g = g ? g.r : ""; gr.querySelector("input").placeholder = g ? g.r : "–"; }
+      });
       paintTrainProgress();
       scheduleAutosave();
     }

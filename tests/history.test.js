@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prFor, lastSetsFor, bestSet, allSetsFor, isBodyweightHistory,
-  exerciseSessions, daysBetween, restSecondsFor, e1rm, strengthTrend } from "../src/core/history.js";
+  exerciseSessions, daysBetween, restSecondsFor, e1rm, strengthTrend, compareSet } from "../src/core/history.js";
 
 // a routine that changes week to week: the incline press disappears for a week, then returns
 const logs = [
@@ -86,4 +86,15 @@ test("strength trend: one session has no trend yet; bodyweight trends by reps", 
   const pu = strengthTrend(logs, "push-ups");
   assert.equal(pu.bodyweight, true);
   assert.equal(pu.pct, 25);                                // 20 → 25 reps
+});
+
+test("compareSet: progress vs the same set last session", () => {
+  assert.equal(compareSet({ w: 62.5, r: 8 }, { w: 60, r: 8 }), "up");
+  assert.equal(compareSet({ w: 60, r: 9 }, { w: 60, r: 8 }), "up");
+  assert.equal(compareSet({ w: "60", r: "8" }, { w: 60, r: 8 }), "same");
+  assert.equal(compareSet({ w: 60, r: 6 }, { w: 60, r: 8 }), "down");
+  assert.equal(compareSet({ w: 55, r: 12 }, { w: 60, r: 8 }), "down");
+  assert.equal(compareSet({ w: 0, r: 15 }, { w: 0, r: 12 }), "up");       // bodyweight reps
+  assert.equal(compareSet({ w: 60, r: "" }, { w: 60, r: 8 }), null);
+  assert.equal(compareSet(null, { w: 60, r: 8 }), null);
 });

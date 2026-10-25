@@ -1111,3 +1111,14 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .ex-edit{font:inherit;font-size:inherit;color:var(--ink);text-decoration:underline;text-underline-offset:2px;text-transform:inherit;letter-spacing:inherit;padding:0}
 .cx-groups{margin-top:6px}
 .ob-chip[disabled]{opacity:.35;cursor:default}
+
+/* ---- last session's numbers as a shadow in every set ----
+   empty box: the shadow is the placeholder; typed box: it moves to the corner.
+   Beat it (more weight, or same weight + more reps) and the set's tick fills in. */
+.set-row .gw{position:relative;display:block;min-width:0}
+.set-row .gw.typed:not([data-g=""])::after{content:attr(data-g);position:absolute;top:4px;right:8px;
+  font-size:10px;line-height:1;color:var(--dim);font-family:var(--cond);pointer-events:none}
+.set-row.vs-up .gw.typed:not([data-g=""])::after{content:"▲ " attr(data-g);color:var(--ink)}
+.set-row.vs-same .gw.typed:not([data-g=""])::after{content:"= " attr(data-g)}
+.set-row.vs-up .sn{background:var(--ink);color:#0A0B0A;border-radius:8px;width:24px;height:24px;margin:0 auto}
+.set-row input::placeholder{color:rgba(255,255,255,.32)}

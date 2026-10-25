@@ -40,6 +40,17 @@ export function lastSetsFor(logs, exId, beforeDate) {
   return best;
 }
 
+// this set vs the same set last session → "up" (more weight, or same weight and
+// more reps), "same", or "down"; null when either side is missing or empty
+export function compareSet(cur, last) {
+  if (!cur || !last) return null;
+  const w = Number(cur.w) || 0, r = Number(cur.r) || 0, lw = Number(last.w) || 0, lr = Number(last.r) || 0;
+  if (!r || !lr) return null;
+  if (w > lw || (w === lw && r > lr)) return "up";
+  if (w === lw && r === lr) return "same";
+  return "down";
+}
+
 // per-session top set + volume, oldest → newest (for charts)
 export function allSetsFor(logs, exId) {
   return logs
