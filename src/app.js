@@ -6,6 +6,8 @@ import { pushWorkout, pushBodyweight, pushMacros, deleteAllHistory } from "./dat
 import { getActiveProgramme, exMeta as resolveExercise } from "./data/programme.js";
 import { esc } from "./ui/safeRender.js";
 import * as H from "./core/history.js";
+import * as P2 from "./core/progress.js";
+import { lineChart, columnChart, sparkline, bindCharts, tableView } from "./ui/charts.js";
 import { weekdayPos, isSessionReferenced, weeklyGoal, comboParts, comboKey } from "./core/programme.js";
 import { missingPosts } from "./core/posts.js";
 import { getActiveTargets, saveTargets, setActiveTargets } from "./data/targets.js";
@@ -1029,64 +1031,117 @@ export function initTracker() {
   }
 
   /* ============================ PROGRESS ============================ */
+  /* ============================ PROGRESS ============================
+     Built with the dataviz rules (ui/charts.js): stat tiles for the headline
+     numbers, columns for workouts per week, a line for strength and bodyweight,
+     each with a tap readout and a "See the numbers" table. */
+  const kg = (v) => (v >= 1000 ? (Math.round(v / 100) / 10) + "K" : String(v));
+  function deltaTxt(d, unitTxt, period) {
+    if (d == null) return "";
+    if (d === 0) return `Same as ${period}`;
+    return `${d > 0 ? "▲" : "▼"} ${Math.abs(d)}${unitTxt} ${d > 0 ? "up on" : "down on"} ${period}`;
+  }
   function renderProgress() {
     const today = todayStr();
-    const total = trainedLogs().length;
-    const wk = trainedLogs().filter(l => dayDiff(l.date, today) >= 0 && dayDiff(l.date, today) < 7).length;
-    const bw = DB.body.length ? DB.body[DB.body.length - 1].weight : null;
-    const dBw = DB.body.length > 1 ? +(DB.body[DB.body.length - 1].weight - DB.body[0].weight).toFixed(1) : null;
+    const weeks = P2.weeklySeries(DB.logs, today, 12, isCardio);
+    const thisW = weeks[weeks.length - 1];
+    const trained = trainedLogs();
+    const first = trained.map(l => l.date).sort()[0];
+    const bwc = P2.bodyweightChange(DB.body, 30);
+    // fair comparison: this week so far vs the same days of last week
+    const wtd = P2.weekToDate(DB.logs, today, isCardio);
+    const vsTxt = wtd.fullWeek ? "last week" : "this point last week";
+    const volPct = P2.pctChange(wtd.then.volume, wtd.now.volume);
+    const wDiff = wtd.now.workouts - wtd.then.workouts;
+    const tile = (label, value, unit, delta, spark = "") => `<div class="st glass"><div class="st-l">${label}</div>
+        <div class="st-row"><div class="st-v">${value}${unit ? `<small>${unit}</small>` : ""}</div>${spark}</div><div class="st-d">${delta || "&nbsp;"}</div></div>`;
 
     let html = `<div class="section-label">Your numbers</div><h1 class="h-title">Progress</h1>
       <p class="h-sub">Beat the logbook. That's how you grow.</p>
-      <button class="btn" data-act="weekly" style="margin:0 0 16px">Weekly review — copy to share</button>
-      <div class="grid2">
-        <div class="stat"><div class="n">${total}</div><div class="l">Workouts logged</div></div>
-        <div class="stat"><div class="n">${wk}</div><div class="l">This week</div></div>
-        <div class="stat"><div class="n">${bw != null ? bw + "<span style='font-size:14px'>kg</span>" : "—"}</div><div class="l">Bodyweight</div></div>
-        <div class="stat"><div class="n">${dBw != null ? (dBw >= 0 ? "+" : "") + dBw + "<span style='font-size:14px'>kg</span>" : "—"}</div><div class="l">Weight change</div></div>
+      <div class="st-grid">
+        ${tile("This week", thisW.workouts, thisW.workouts === 1 ? " workout" : " workouts",
+          wDiff === 0 ? `Same as ${vsTxt}` : `${wDiff > 0 ? "▲" : "▼"} ${Math.abs(wDiff)} ${wDiff > 0 ? "more" : "fewer"} than ${vsTxt}`)}
+        ${tile("Volume", esc(kg(thisW.volume)), " kg",
+          volPct == null ? (thisW.volume ? "Nothing to compare yet" : "Kg × reps this week") : deltaTxt(volPct, "%", vsTxt),
+          sparkline(weeks.slice(-8).map(w => w.volume)))}
+        ${tile("Bodyweight", bwc ? esc(bwc.latest) : "—", bwc ? " kg" : "",
+          bwc && bwc.change != null ? `${bwc.change > 0 ? "▲" : bwc.change < 0 ? "▼" : ""} ${Math.abs(bwc.change)} kg since ${esc(shortDate(bwc.since))}`
+            : bwc ? "Log weekly to see the trend" : "Log it on the Log tab")}
+        ${tile("Workouts logged", trained.length, "",
+          first ? `Since ${esc(parseYmd(first).toLocaleDateString("en-GB", { month: "short", year: "numeric" }))}` : "Your first one starts the count")}
       </div>`;
 
-    // bodyweight chart
-    html += `<div class="subhead">Bodyweight trend</div><div class="card">`;
-    if (DB.body.length >= 2) {
-      html += `<div class="chart">${svgLine(DB.body.map(b => ({ label: b.date, y: b.weight })), "kg")}</div>`;
-    } else {
-      html += `<div class="empty">Log your bodyweight on the <b>Log</b> tab a few times to see the trend.</div>`;
-    }
-    html += `</div>`;
+    // consistency: workouts per week, this week highlighted, goal as a reference line
+    const goal = goalNow();
+    html += `<div class="subhead">Consistency</div><div class="card viz-card">
+      <div class="viz-cap">Workouts per week · last 12 weeks</div>
+      ${columnChart(weeks.map((w, i) => ({
+        y: w.workouts, label: shortDate(w.week), current: i === weeks.length - 1,
+        tip: [`${w.workouts} workout${w.workouts === 1 ? "" : "s"}`, `Week of ${shortDate(w.week)} · ${kg(w.volume)} kg volume`],
+      })), { goal, goalLabel: goal ? `Goal ${goal}` : "" })}
+      ${tableView(["Week of", "Workouts", "Volume (kg)"], weeks.slice().reverse().map(w => [shortDate(w.week), String(w.workouts), String(w.volume)]))}
+    </div>`;
 
-    // lift progress (cardio excluded — minutes aren't a "lift")
+    // strength: estimated max per session for the chosen lift (cardio excluded)
     const lifted = [];
     const seen = new Set();
-    DB.logs.forEach(l => Object.keys(l.entries).forEach(id => {
-      if (!seen.has(id) && !isCardio(id)) { seen.add(id); lifted.push(id); }
+    trained.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).forEach(l => Object.keys(l.entries).forEach(id => {
+      if (!seen.has(id) && !isCardio(id) && l.entries[id].length) { seen.add(id); lifted.push(id); }
     }));
-    html += `<div class="subhead">Lift progress</div>`;
+    html += `<div class="subhead">Strength</div>`;
     if (lifted.length) {
       const sel = ACTIVE_LIFT && lifted.includes(ACTIVE_LIFT) ? ACTIVE_LIFT : lifted[0];
       html += `<div class="selectrow"><select class="sel" data-act="liftsel">` +
-        lifted.map(id => `<option value="${id}" ${id === sel ? "selected" : ""}>${esc(exMeta(id).name)}</option>`).join("") +
-        `</select></div><div class="card"><div class="chart" id="liftchart">${liftChart(sel)}</div></div>`;
+        lifted.map(id => `<option value="${esc(id)}" ${id === sel ? "selected" : ""}>${esc(exMeta(id).name)}</option>`).join("") +
+        `</select></div><div class="card viz-card" id="liftchart">${strengthBlock(sel)}</div>`;
     } else {
-      html += `<div class="card"><div class="empty">Log a workout on the <b>Train</b> tab and your top-set progress will chart here.</div></div>`;
+      html += `<div class="card"><div class="empty">Log a workout on the <b>Train</b> tab and your strength will chart here.</div></div>`;
     }
 
-    // PRs
-    html += `<div class="subhead">Personal records</div><div class="card">`;
-    const prs = lifted.map(id => ({ id, pr: prFor(id) })).filter(x => x.pr)
-      .sort((a, b) => (b.pr.w - a.pr.w) || (b.pr.r - a.pr.r));
-    if (prs.length) {
-      prs.forEach(x => {
-        html += `<div class="pr-row ex-link" data-act="exhist" data-ex="${x.id}"><span>${esc(exMeta(x.id).name)}</span>
-          <span class="v">${esc(fmtSet(x.pr))}</span></div>`;
-      });
-    } else {
-      html += `<div class="empty">Your heaviest set on each lift will appear here.</div>`;
-    }
+    // bodyweight trend, with the target from your profile as a reference line
+    const body = DB.body.filter(b => Number(b.weight) > 0).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+    const tgt = Number(PROFILE?.bw_target) || null;
+    html += `<div class="subhead">Bodyweight</div><div class="card viz-card">`;
+    html += body.length >= 2
+      ? `<div class="viz-cap">${esc(body.length)} weigh-ins${tgt ? ` · target ${esc(tgt)} kg` : ""}</div>
+        ${lineChart(body.map(b => ({ y: Number(b.weight), label: shortDate(b.date), tip: [`${b.weight} kg`, prettyShort(b.date)] })), { unit: " kg", target: tgt, targetLabel: "Target" })}
+        ${tableView(["Date", "Weight (kg)"], body.slice().reverse().map(b => [shortDate(b.date), String(b.weight)]))}`
+      : `<div class="empty">Log your bodyweight on the <b>Log</b> tab a few times to see the trend.</div>`;
     html += `</div>`;
-    html += `<button class="linkbtn" data-act="history" style="margin-top:14px">View full workout history
+
+    // records: newest first, so fresh progress sits on top
+    const prs = lifted.map(id => {
+      const pr = prFor(id); if (!pr) return null;
+      const when = trained.filter(l => (l.entries[id] || []).some(s => Number(s.w) === Number(pr.w) && Number(s.r) === Number(pr.r)))
+        .map(l => l.date).sort()[0];
+      return { id, pr, when };
+    }).filter(Boolean).sort((a, b) => ((a.when || "") < (b.when || "") ? 1 : -1));
+    html += `<div class="subhead">Personal records</div><div class="card">`;
+    html += prs.length ? prs.map(x => {
+      const fresh = x.when && dayDiff(x.when, today) <= 14;
+      return `<div class="pr-row ex-link" data-act="exhist" data-ex="${esc(x.id)}"><span>${esc(exMeta(x.id).name)}${fresh ? '<span class="tag-new">NEW</span>' : ""}<small>${x.when ? esc(shortDate(x.when)) : ""}</small></span>
+        <span class="v">${esc(fmtSet(x.pr))}</span></div>`;
+    }).join("") : `<div class="empty">Your heaviest set on each lift will appear here.</div>`;
+    html += `</div>`;
+    html += `<button class="btn ghost" data-act="weekly" style="margin-top:14px">Weekly review — copy to share</button>
+      <button class="linkbtn" data-act="history" style="margin-top:10px">View full workout history
       <small>Every session you've logged, by date.</small></button>`;
     view().innerHTML = html;
+    bindCharts(view());
+  }
+  // strength card for one lift: headline number, chart, caption, table
+  function strengthBlock(id) {
+    const { bodyweight, points } = P2.strengthSeries(DB.logs, id);
+    if (points.length < 2) return `<div class="empty">Log this lift in 2 or more sessions to see the trend.</div>`;
+    const unit = bodyweight ? " reps" : " kg";
+    const firstV = points[0].value, lastV = points[points.length - 1].value;
+    const pct = P2.pctChange(firstV, lastV);
+    const setTxt = (b) => (bodyweight || !b.w ? `${b.r} reps` : `${b.w} × ${b.r}`);
+    return `<div class="viz-head"><span>${bodyweight ? "Best reps" : "Estimated max"}</span><b>${esc(lastV)}${esc(unit)}</b>
+        <em>${pct == null || pct === 0 ? `${points.length} sessions` : `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% since ${esc(shortDate(points[0].date))}`}</em></div>
+      ${lineChart(points.map(p => ({ y: p.value, label: shortDate(p.date), tip: [`${p.value}${unit}`, `${prettyShort(p.date)} · best set ${setTxt(p.best)}`] })), { unit, markMax: true })}
+      <div class="viz-cap">${bodyweight ? "Most reps in a set, each session." : "Your best set each session as a one-rep max estimate, so reps count: 60 × 10 beats 62.5 × 5."}</div>
+      ${tableView(["Date", "Best set", bodyweight ? "Reps" : "Est. max (kg)"], points.slice().reverse().map(p => [shortDate(p.date), setTxt(p.best), String(p.value)]))}`;
   }
 
   /* ============================ HISTORY ============================ */
@@ -1111,13 +1166,6 @@ export function initTracker() {
     view().innerHTML = html;
   }
   let ACTIVE_LIFT = null;
-  function liftChart(id) {
-    const hist = allSetsFor(id);
-    if (hist.length < 2) return `<div class="empty">Need 2+ logged sessions of this lift to chart it. Keep logging!</div>`;
-    return isBodyweight(id)
-      ? svgLine(hist.map(h => ({ label: h.date, y: h.top.r })), " reps")
-      : svgLine(hist.map(h => ({ label: h.date, y: h.top.w })), "kg");
-  }
 
   /* ---------- SVG line chart ---------- */
   function svgLine(pts, unit) {
@@ -1331,13 +1379,14 @@ export function initTracker() {
         <div><span>Last done</span><b>${esc(agoTxt)}</b></div>
         <div><span>Times logged</span><b>${hist.length}</b></div>
       </div>
-      ${!cardio && hist.length >= 2 ? `<div class="chart xh-chart">${liftChart(id)}</div><div class="xh-cap">${isBodyweight(id) ? "Best reps" : "Heaviest weight"} per session — rep gains at the same weight show in the list below.</div>` : ""}
+      ${!cardio && hist.length >= 2 ? `<div class="xh-chart viz-card">${strengthBlock(id)}</div>` : ""}
       <div class="xh-list">${hist.length ? hist.map(h => `<div class="xh-row">
           <div class="xh-when"><b>${esc(prettyShort(h.date))}</b><small>${esc(sessName(h.session))}</small></div>
           <div class="xh-sets">${h.sets.map(s => esc(setTxt(s))).join("<br>")}</div></div>`).join("")
         : `<div class="empty" style="padding:18px">Not logged yet — your first session sets the baseline.</div>`}</div>
     </div>`;
     document.body.appendChild(ov);
+    bindCharts(ov);
   }
 
   /* ---------- rest timer ----------
@@ -2826,7 +2875,7 @@ export function initTracker() {
     // file inputs (avatar, backup restore) carry an id, not data-act — fall back to the target itself
     const el = e.target.closest("[data-act]") || e.target;
     if (!el || !el.dataset) return;
-    if (el.dataset.act === "liftsel") { ACTIVE_LIFT = el.value; document.getElementById("liftchart").innerHTML = liftChart(el.value); }
+    if (el.dataset.act === "liftsel") { ACTIVE_LIFT = el.value; const c = document.getElementById("liftchart"); c.innerHTML = strengthBlock(el.value); bindCharts(c); }
     else if (el.id === "avatar-file" && el.files[0]) {
       const file = el.files[0]; el.value = "";
       toast("Uploading photo…");

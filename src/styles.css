@@ -1122,3 +1122,40 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .set-row.vs-same .gw.typed:not([data-g=""])::after{content:"= " attr(data-g)}
 .set-row.vs-up .sn{background:var(--ink);color:#0A0B0A;border-radius:8px;width:24px;height:24px;margin:0 auto}
 .set-row input::placeholder{color:rgba(255,255,255,.32)}
+
+/* ---- Progress (dataviz rules): stat tiles, chart cards, tap readout, table twin ---- */
+.st-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px}
+.st{position:relative;padding:14px 14px 12px;border-radius:18px;min-width:0;overflow:hidden}
+.st-l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.st-v{font-family:var(--cond);font-size:34px;line-height:1;margin-top:8px;color:var(--ink);white-space:nowrap;flex-shrink:0}   /* proportional figures for big numbers */
+.st-v small{font-family:var(--sans);font-size:12px;color:var(--muted);margin-left:3px;font-weight:600}
+.st-d{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.3;min-height:15px}
+.st-row{display:flex;align-items:flex-end;justify-content:space-between;gap:6px}
+.st .spark{width:64px;height:22px;flex-shrink:1;min-width:0;margin-bottom:2px}
+.viz-card{padding:14px 12px 10px}
+.viz-cap{font-size:11.5px;color:var(--muted);margin:0 4px 8px;line-height:1.4}
+.viz-card .viz + .viz-cap{margin-top:8px}
+.viz-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 4px 6px}
+.viz-head span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.viz-head b{font-family:var(--cond);font-size:26px;line-height:1;color:var(--ink)}
+.viz-head em{font-style:normal;font-size:12px;color:var(--muted)}
+.viz{position:relative;touch-action:pan-y;outline:none;border-radius:12px}
+.viz:focus-visible{box-shadow:0 0 0 2px rgba(255,255,255,.35)}
+.viz svg{width:100%;height:auto;display:block;overflow:visible}
+.viz .tnum{font-variant-numeric:tabular-nums}
+.viz-tip{position:absolute;z-index:3;pointer-events:none;padding:7px 10px;border-radius:10px;white-space:nowrap;
+  background:rgba(20,22,19,.96);border:1px solid rgba(255,255,255,.16);box-shadow:0 8px 20px rgba(0,0,0,.45)}
+.viz-tip b{display:block;font-size:13px;color:var(--ink)}
+.viz-tip small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.viz-table{margin:8px 4px 2px}
+.viz-table summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);list-style:none;padding:4px 0}
+.viz-table summary::-webkit-details-marker{display:none}
+.viz-table summary::after{content:" ›";display:inline-block;transition:transform .15s ease}
+.viz-table[open] summary::after{transform:rotate(90deg)}
+.viz-table table{width:100%;border-collapse:collapse;margin-top:6px;font-size:12.5px}
+.viz-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08)}
+.viz-table td{padding:7px 4px;border-bottom:1px solid rgba(255,255,255,.05);font-variant-numeric:tabular-nums;color:var(--ink)}
+.viz-table th:not(:first-child),.viz-table td:not(:first-child){text-align:right}
+.pr-row small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.pr-row .tag-new{margin-left:8px}
+.xh-chart.viz-card{padding:4px 0 6px}
