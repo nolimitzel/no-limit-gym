@@ -164,6 +164,7 @@ export function bindCharts(root) {
     el.setAttribute("role", "group");
     el.setAttribute("aria-label", (svg.getAttribute("aria-label") || "Chart") + ". Use the arrow keys to read each point.");
     el.addEventListener("focus", () => { if (!fromPointer) showAt(data.pts.length - 1); fromPointer = false; });
+    el.addEventListener("pointerup", () => { if (document.activeElement === el) fromPointer = false; });   // tapped while already focused
     el.addEventListener("keydown", (e) => {
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); showAt((cur < 0 ? data.pts.length - 1 : cur) + (e.key === "ArrowRight" ? 1 : -1)); }
       else if (e.key === "Escape") hide();

@@ -16,9 +16,9 @@ test("countTicks always reaches the top value with whole numbers (QA D1)", () =>
 test("column chart keeps bars and the goal line inside the plot", () => {
   const bars = Array.from({ length: 12 }, (_, i) => ({ y: i === 11 ? 7 : 3, label: "w" + i, current: i === 11, tip: ["x"] }));
   const svg = columnChart(bars, { goal: 7, goalLabel: "Goal 7" });
-  const ys = [...svg.matchAll(/ y1="([\d.]+)"/g)].map((m) => +m[1]);
+  const ys = [...svg.matchAll(/ y1="(-?[\d.]+)"/g)].map((m) => +m[1]);
   assert.ok(ys.every((y) => y >= 16 - 0.01), "nothing above the plot top");   // pT = 16
-  const paths = [...svg.matchAll(/ V([\d.]+) Q/g)].map((m) => +m[1]);
+  const paths = [...svg.matchAll(/ V(-?[\d.]+) Q/g)].map((m) => +m[1]);
   assert.ok(paths.every((y) => y >= 16), "bar tops inside the plot");
 });
 
