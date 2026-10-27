@@ -284,13 +284,14 @@ export function initTracker() {
   function homeMusicCard() {
     const mus = getMusic();
     const url = mus.url ? (safeMusicUrl(mus.url) || "#") : null;
+    // a square: the playlist cover fills it (once loaded), the name sits over the bottom
     const inner = `<span class="hm2-art"${url ? plCover(url) : ""}>${ICON.note}</span>
       <span class="hm2-meta"><small>${url ? "Soundtrack" : "Music"}</small><b${url ? plTitle(url, mus.label) : ""}>${esc(url ? (mus.label || "Training playlist") : "Set your training soundtrack")}</b></span>
       <span class="hm2-go">${url ? ICON.play : ICON.chev}</span>`;
-    if (!url) return `<button class="h2-music glass" data-act="gomusic">${inner}</button>`;
+    if (!url) return `<button class="h2-music h2-sq glass" id="home-music" data-act="gomusic">${inner}</button>`;
     return spotifyLink(url)
-      ? `<button class="h2-music glass" id="home-music" data-act="plopen" data-url="${esc(url)}">${inner}</button>`
-      : `<a class="h2-music glass" id="home-music" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+      ? `<button class="h2-music h2-sq glass" id="home-music" data-act="plopen" data-url="${esc(url)}">${inner}</button>`
+      : `<a class="h2-music h2-sq glass" id="home-music" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
   }
   /* ---- playlist covers + in-app player (Spotify links; others open as before) ---- */
   // markup hooks filled in by hydratePlaylists once the cover/name has loaded
@@ -363,11 +364,11 @@ export function initTracker() {
       const host = document.getElementById("home-music");
       if (!np || !np.name || !host) return;
       const card = document.createElement(np.url ? "a" : "div");
-      card.id = "home-music"; card.className = "np-card glass";
+      card.id = "home-music"; card.className = "np-card np-sq h2-sq glass";
       if (np.url) { card.href = np.url; card.target = "_blank"; card.rel = "noopener noreferrer"; }
       card.innerHTML = `${np.art ? `<img class="np-art" src="${esc(np.art)}" alt="">` : `<span class="np-art ph">${ICON.note}</span>`}
         <div class="np-body">
-          <div class="np-label">${np.playing ? "Now playing · Spotify" : "Last played · Spotify"}</div>
+          <div class="np-label">${np.playing ? "Now playing" : "Last played"}</div>
           <div class="np-track">${esc(np.name)}</div>
           <div class="np-artist">${esc(np.artist || "")}</div>
           <div class="np-bar"><i></i></div>
@@ -413,7 +414,8 @@ export function initTracker() {
     // new bests this week (the old all-time count just equalled the number of lifts ever done)
     const weekPRs = P2.prsThisWeek(DB.logs, today, isCardio);
     const toGo = Math.max(0, goal - done);
-    html += `<div class="h2-hero glass">
+    // top row: two squares — your week (left) and your soundtrack / now playing (right)
+    html += `<div class="h2-top"><div class="h2-hero h2-sq glass">
       <svg class="h2-ring" viewBox="0 0 128 128" aria-label="${done} of ${goal} sessions this week">
         <circle cx="64" cy="64" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="11"/>
         <circle class="h2-arc" cx="64" cy="64" r="${R}" fill="none" stroke="var(--volt)" stroke-width="11" stroke-linecap="round"
@@ -422,10 +424,10 @@ export function initTracker() {
         <text x="64" y="86" text-anchor="middle" class="h2-ring-l">this week</text>
       </svg>
       <div class="h2-stats">
-        <div><b>${streak}</b><span>week streak</span></div>
-        <div><b>${weekPRs.length}</b><span>${weekPRs.length === 1 ? "new PR" : "new PRs"} this week</span></div>
-        <div><b>${toGo === 0 ? "Done" : toGo}</b><span>${toGo === 0 ? "goal hit this week" : `to hit your goal of ${goal}`}</span></div>
-      </div></div>`;
+        <div><b>${streak}</b><span>wk streak</span></div>
+        <div><b>${weekPRs.length}</b><span>${weekPRs.length === 1 ? "new PR" : "new PRs"}</span></div>
+        <div><b>${toGo === 0 ? "✓" : toGo}</b><span>${toGo === 0 ? "goal hit" : `to goal ${goal}`}</span></div>
+      </div></div>${homeMusicCard()}</div>`;
 
     // today's workout — white (not volt) action: the ring keeps the spotlight
     const todays = trainedLogs().filter(l => l.date === today);
@@ -456,7 +458,7 @@ export function initTracker() {
       const n = new Set(todays.flatMap(l => Object.keys(l.entries))).size;
       const sets = todays.reduce((t, l) => t + Object.values(l.entries).reduce((a, x) => a + x.length, 0), 0);
       html += `<div class="h2-today glass done"><small>Today · done</small><h2>${esc(todays.map(l => sessName(l.session)).join(" + "))}</h2>
-        <p>${n} exercise${n === 1 ? "" : "s"} · ${sets} sets. Good work — recover well.</p>
+        <p>${n} exercise${n === 1 ? "" : "s"} · ${sets} set${sets === 1 ? "" : "s"}. Good work — recover well.</p>
         ${vsHtml(todays)}
         <button class="h2-cta ghost" data-act="gotrain">Train something else</button></div>`;
     } else if (c.type === "train" && sess(c.session)) {
@@ -473,7 +475,6 @@ export function initTracker() {
     }
 
     html += homeProgress();
-    html += homeMusicCard();
 
     // the week at a glance — what you actually trained, plus anything scheduled
     html += `<div class="h2-weekhd"><span>Your week</span><button data-act="weekedit">Schedule</button></div><div class="h2-week glass">`;
