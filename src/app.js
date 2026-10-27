@@ -410,7 +410,8 @@ export function initTracker() {
     const pct = Math.min(1, done / goal);
     const R = 52, C = 2 * Math.PI * R;
     const streak = myWeekStreak();
-    const prCount = [...new Set(DB.logs.flatMap(l => Object.keys(l.entries)))].filter(id => !isCardio(id) && prFor(id)).length;
+    // new bests this week (the old all-time count just equalled the number of lifts ever done)
+    const weekPRs = P2.prsThisWeek(DB.logs, today, isCardio);
     const toGo = Math.max(0, goal - done);
     html += `<div class="h2-hero glass">
       <svg class="h2-ring" viewBox="0 0 128 128" aria-label="${done} of ${goal} sessions this week">
@@ -422,23 +423,39 @@ export function initTracker() {
       </svg>
       <div class="h2-stats">
         <div><b>${streak}</b><span>week streak</span></div>
-        <div><b>${prCount}</b><span>personal records</span></div>
+        <div><b>${weekPRs.length}</b><span>${weekPRs.length === 1 ? "new PR" : "new PRs"} this week</span></div>
         <div><b>${toGo === 0 ? "Done" : toGo}</b><span>${toGo === 0 ? "goal hit this week" : `to hit your goal of ${goal}`}</span></div>
       </div></div>`;
 
     // today's workout — white (not volt) action: the ring keeps the spotlight
     const todays = trainedLogs().filter(l => l.date === today);
+    // today vs last time, set by set (the same comparison as the shadows in Train)
+    const vsHtml = (list) => {
+      const v = list.map(l => P2.sessionVsLast(DB.logs, l, isCardio)).reduce((a, b) => ({
+        up: a.up + b.up, same: a.same + b.same, down: a.down + b.down, volume: a.volume + b.volume,
+        newBests: a.newBests.concat(b.newBests) }), { up: 0, same: 0, down: 0, volume: 0, newBests: [] });
+      const chips = [];
+      if (v.up + v.same + v.down) {
+        chips.push(`<span class="vs-chip${v.up ? " up" : ""}">▲ ${v.up} beat last time</span>`);
+        if (v.same) chips.push(`<span class="vs-chip">= ${v.same} matched</span>`);
+      }
+      if (v.volume) chips.push(`<span class="vs-chip">${esc(kg(v.volume))} kg volume</span>`);
+      const best = v.newBests.length ? `<div class="h2-best">New best · ${v.newBests.map(b => `${esc(exMeta(b.id).name)} ${esc(fmtSet(b.set))}`).join(" · ")}</div>` : "";
+      return chips.length || best ? `<div class="h2-vs">${chips.join("")}</div>${best}` : "";
+    };
     const open = todays.find(l => l.done === false);          // started, not finished
     if (open) {
       const n = Object.keys(open.entries).length;
       html += `<div class="h2-today glass"><small>Today · in progress</small><h2>${esc(sessName(open.session))}</h2>
         <p>${n} exercise${n === 1 ? "" : "s"} so far — everything's saved.</p>
+        ${vsHtml([open])}
         <button class="h2-cta" data-act="pick" data-s="${esc(open.session)}">Continue workout ${ICON.arrow}</button></div>`;
     } else if (todays.length) {
       const n = new Set(todays.flatMap(l => Object.keys(l.entries))).size;
       const sets = todays.reduce((t, l) => t + Object.values(l.entries).reduce((a, x) => a + x.length, 0), 0);
       html += `<div class="h2-today glass done"><small>Today · done</small><h2>${esc(todays.map(l => sessName(l.session)).join(" + "))}</h2>
         <p>${n} exercise${n === 1 ? "" : "s"} · ${sets} sets. Good work — recover well.</p>
+        ${vsHtml(todays)}
         <button class="h2-cta ghost" data-act="gotrain">Train something else</button></div>`;
     } else if (c.type === "train" && sess(c.session)) {
       const s = sess(c.session);

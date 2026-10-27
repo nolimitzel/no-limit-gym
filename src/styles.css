@@ -1159,3 +1159,11 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .pr-row small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
 .pr-row .tag-new{margin-left:8px}
 .xh-chart.viz-card{padding:4px 0 6px}
+
+/* ---- Home: today vs last time ---- */
+.h2-vs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 2px}
+.vs-chip{font-size:12px;font-weight:600;color:var(--muted);padding:5px 10px;border-radius:99px;
+  background:rgba(255,255,255,.06);border:1px solid var(--glass-brd);white-space:nowrap}
+.vs-chip.up{color:#0A0B0A;background:var(--ink);border-color:var(--ink)}
+.h2-best{font-size:12.5px;color:var(--ink);margin:8px 0 2px;line-height:1.4}
+.h2-today .h2-vs + .h2-cta,.h2-today .h2-best + .h2-cta{margin-top:14px}

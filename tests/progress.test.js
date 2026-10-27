@@ -81,3 +81,29 @@ test("week maths across a year boundary, on a Sunday, and with cardio only", () 
   assert.deepEqual(t.then, { workouts: 1, volume: 100 });                 // the full previous week on a Sunday
   assert.equal(t.fullWeek, true);
 });
+
+import { prsThisWeek, sessionVsLast } from "../src/core/progress.js";
+
+test("prsThisWeek: strictly better than every earlier set; first-ever sets are baselines", () => {
+  const logs = [
+    { date: "2026-10-12", entries: { bench: [{ w: 60, r: 8 }], squat: [{ w: 100, r: 5 }], row: [{ w: 50, r: 10 }] } },
+    { date: "2026-10-26", entries: { bench: [{ w: 62.5, r: 6 }], squat: [{ w: 100, r: 5 }], curl: [{ w: 15, r: 10 }], run: [{ w: 30, r: 1 }] } },
+    { date: "2026-10-27", entries: { row: [{ w: 50, r: 12 }] } },
+  ];
+  const ids = prsThisWeek(logs, "2026-10-27", (id) => id === "run").map((p) => p.id).sort();
+  assert.deepEqual(ids, ["bench", "row"]);             // squat matched (not a PR), curl is a first, run is cardio
+});
+
+test("sessionVsLast compares set by set and finds new bests", () => {
+  const logs = [
+    { date: "2026-10-20", entries: { bench: [{ w: 60, r: 8 }, { w: 60, r: 8 }, { w: 57.5, r: 7 }] } },
+    { date: "2026-10-27", entries: { bench: [{ w: 62.5, r: 8 }, { w: 60, r: 8 }, { w: 55, r: 7 }, { w: 50, r: 10 }], fly: [{ w: 10, r: 12 }] } },
+  ];
+  const v = sessionVsLast(logs, logs[1]);
+  assert.equal(v.exercises, 2);
+  assert.equal(v.sets, 5);
+  assert.deepEqual([v.up, v.same, v.down], [1, 1, 1]);        // set 4 and the fly have nothing to compare with
+  assert.equal(v.volume, 62.5 * 8 + 480 + 385 + 500 + 120);
+  assert.deepEqual(v.newBests.map((b) => b.id), ["bench"]);
+  assert.deepEqual(sessionVsLast(logs, null).sets, 0);
+});

@@ -1,7 +1,7 @@
 /* Progress page numbers (pure, unit-tested in tests/progress.test.js).
    Dates are "YYYY-MM-DD" strings; weeks start on Monday. A workout counts once
    it has at least one set; volume is kg × reps over lifts (cardio excluded). */
-import { e1rm, isBodyweightHistory } from "./history.js";
+import { e1rm, isBodyweightHistory, lastSetsFor, prFor, bestSet, betterSet, compareSet } from "./history.js";
 
 const num = (v) => Number(v) || 0;
 const parse = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
@@ -90,4 +90,43 @@ export function weekToDate(logs, today, isCardio = () => false) {
     return out;
   };
   return { now: sum(mon, today), then: sum(lastMon, lastEnd), fullWeek: days === 6 };
+}
+
+// a strictly better set than the best before `date` (a first-ever set is a baseline, not a PR)
+const beats = (set, prior) => !!set && !!prior && betterSet(prior, set) === set &&
+  (num(set.w) !== num(prior.w) || num(set.r) !== num(prior.r));
+
+// lifts with a new best set this week (Mon → today)
+export function prsThisWeek(logs, today, isCardio = () => false) {
+  const mon = mondayOf(today);
+  const week = (logs || []).filter((l) => l.date >= mon && l.date <= today);
+  const ids = [...new Set(week.flatMap((l) => Object.keys(l.entries || {})))].filter((id) => !isCardio(id));
+  return ids.map((id) => {
+    const best = bestSet(week.flatMap((l) => (l.entries[id] || [])));
+    const prior = prFor(logs, id, mon);
+    return beats(best, prior) ? { id, set: best } : null;
+  }).filter(Boolean);
+}
+
+// one workout against last time, set by set: sets beaten / matched / below,
+// volume, and any lift that set a new best
+export function sessionVsLast(logs, log, isCardio = () => false) {
+  const out = { exercises: 0, sets: 0, volume: 0, up: 0, same: 0, down: 0, newBests: [] };
+  if (!log || !log.entries) return out;
+  for (const [id, sets] of Object.entries(log.entries)) {
+    if (!sets || !sets.length) continue;
+    out.exercises++;
+    out.sets += sets.length;
+    if (isCardio(id)) continue;
+    const last = lastSetsFor(logs, id, log.date);
+    sets.forEach((s, i) => {
+      out.volume += num(s.w) * num(s.r);
+      const v = last ? compareSet(s, last.sets[i]) : null;
+      if (v) out[v]++;
+    });
+    const best = bestSet(sets), prior = prFor(logs, id, log.date);
+    if (beats(best, prior)) out.newBests.push({ id, set: best });
+  }
+  out.volume = Math.round(out.volume);
+  return out;
 }
