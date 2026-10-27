@@ -1144,12 +1144,12 @@ export function initTracker() {
         <span class="v">${esc(fmtSet(x.pr))}</span></div>`;
     };
     const freshN = prs.filter(x => x.when && dayDiff(x.when, today) <= 14).length;
-    html += `<div class="subhead">Personal records${prs.length ? ` <span class="sub-n">${prs.length} lifts${freshN ? ` · ${freshN} new` : ""}</span>` : ""}</div><div class="card">`;
+    html += `<div class="subhead">Personal records${prs.length ? ` <span class="sub-n">${prs.length} ${prs.length === 1 ? "lift" : "lifts"}${freshN ? ` · ${freshN} new` : ""}</span>` : ""}</div><div class="card">`;
     if (!prs.length) html += `<div class="empty">Your heaviest set on each lift will appear here.</div>`;
     else {
       html += prs.slice(0, PR_SHOW).map(prRow).join("");
-      if (prs.length > PR_SHOW) html += `<div class="pr-more" hidden>${prs.slice(PR_SHOW).map(prRow).join("")}</div>
-        <button class="pr-toggle" data-act="prmore" data-n="${prs.length}">Show all ${prs.length}</button>`;
+      if (prs.length > PR_SHOW) html += `<div class="pr-more" id="pr-more" hidden>${prs.slice(PR_SHOW).map(prRow).join("")}</div>
+        <button class="pr-toggle" data-act="prmore" data-n="${prs.length}" aria-expanded="false" aria-controls="pr-more">Show all ${prs.length}</button>`;
     }
     html += `</div>`;
     html += `<button class="btn ghost" data-act="weekly" style="margin-top:14px">Weekly review — copy to share</button>
@@ -2605,6 +2605,7 @@ export function initTracker() {
       const more = el.parentElement.querySelector(".pr-more"); if (!more) return;
       more.hidden = !more.hidden;
       el.textContent = more.hidden ? `Show all ${el.dataset.n}` : "Show fewer";
+      el.setAttribute("aria-expanded", String(!more.hidden));
       if (more.hidden) el.closest(".card")?.scrollIntoView({ block: "nearest" });
     }
     else if (act === "sspair") openSupersetSheet(el.dataset.ex);

@@ -1203,6 +1203,9 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 
 /* ---- Progress: personal records, 5 up front, the rest folded ---- */
 .subhead .sub-n{font-size:11px;letter-spacing:.04em;text-transform:none;color:var(--muted);font-weight:500;margin-left:6px}
-.pr-more .pr-row:first-child{border-top:1px solid var(--line)}
-.pr-toggle{display:block;width:100%;margin-top:4px;padding:12px 0 4px;font-size:13px;font-weight:600;color:var(--muted);text-align:center;border-top:1px solid rgba(255,255,255,.06)}
+.pr-toggle{display:block;width:100%;margin-top:2px;padding:12px 0 4px;font-size:13px;font-weight:600;color:var(--muted);text-align:center}
 .pr-toggle:active{color:var(--ink)}
+
+/* the ring is drawn smaller in the square, so its text is set larger to stay readable (QA R1) */
+.h2-sq .h2-ring-n{font-size:36px}
+.h2-sq .h2-ring-l{font-size:15px;letter-spacing:.06em}
