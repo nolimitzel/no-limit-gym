@@ -71,3 +71,13 @@ test("weekToDate compares with the same days of last week", () => {
   assert.equal(t.fullWeek, false);
   assert.equal(weekToDate(logs, "2026-11-01").fullWeek, true);
 });
+
+test("week maths across a year boundary, on a Sunday, and with cardio only", () => {
+  assert.equal(mondayOf("2027-01-03"), "2026-12-28");                    // Sunday → Monday of the week before
+  const s = weeklySeries([{ date: "2027-01-01", entries: { run: [{ w: 30, r: 1 }] } }], "2027-01-03", 2, (id) => id === "run");
+  assert.deepEqual(s.map((w) => w.week), ["2026-12-21", "2026-12-28"]);
+  assert.deepEqual(s.map((w) => [w.workouts, w.volume]), [[0, 0], [1, 0]]); // cardio counts as a workout, not volume
+  const t = weekToDate([{ date: "2026-12-27", entries: { b: [{ w: 10, r: 10 }] } }], "2027-01-03");
+  assert.deepEqual(t.then, { workouts: 1, volume: 100 });                 // the full previous week on a Sunday
+  assert.equal(t.fullWeek, true);
+});

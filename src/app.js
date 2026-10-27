@@ -1065,7 +1065,7 @@ export function initTracker() {
           volPct == null ? (thisW.volume ? "Nothing to compare yet" : "Kg × reps this week") : deltaTxt(volPct, "%", vsTxt),
           sparkline(weeks.slice(-8).map(w => w.volume)))}
         ${tile("Bodyweight", bwc ? esc(bwc.latest) : "—", bwc ? " kg" : "",
-          bwc && bwc.change != null ? `${bwc.change > 0 ? "▲" : bwc.change < 0 ? "▼" : ""} ${Math.abs(bwc.change)} kg since ${esc(shortDate(bwc.since))}`
+          bwc && bwc.change != null ? (bwc.change === 0 ? `No change since ${esc(shortDate(bwc.since))}` : `${bwc.change > 0 ? "▲" : "▼"} ${Math.abs(bwc.change)} kg since ${esc(shortDate(bwc.since))}`)
             : bwc ? "Log weekly to see the trend" : "Log it on the Log tab")}
         ${tile("Workouts logged", trained.length, "",
           first ? `Since ${esc(parseYmd(first).toLocaleDateString("en-GB", { month: "short", year: "numeric" }))}` : "Your first one starts the count")}
@@ -1104,7 +1104,7 @@ export function initTracker() {
     html += `<div class="subhead">Bodyweight</div><div class="card viz-card">`;
     html += body.length >= 2
       ? `<div class="viz-cap">${esc(body.length)} weigh-ins${tgt ? ` · target ${esc(tgt)} kg` : ""}</div>
-        ${lineChart(body.map(b => ({ y: Number(b.weight), label: shortDate(b.date), tip: [`${b.weight} kg`, prettyShort(b.date)] })), { unit: " kg", target: tgt, targetLabel: "Target" })}
+        ${lineChart(body.map(b => ({ y: Number(b.weight), label: shortDate(b.date), tip: [`${b.weight} kg`, prettyShort(b.date)] })), { unit: " kg", target: tgt, targetLabel: "Target", label: "Bodyweight" })}
         ${tableView(["Date", "Weight (kg)"], body.slice().reverse().map(b => [shortDate(b.date), String(b.weight)]))}`
       : `<div class="empty">Log your bodyweight on the <b>Log</b> tab a few times to see the trend.</div>`;
     html += `</div>`;
@@ -1132,14 +1132,14 @@ export function initTracker() {
   // strength card for one lift: headline number, chart, caption, table
   function strengthBlock(id) {
     const { bodyweight, points } = P2.strengthSeries(DB.logs, id);
-    if (points.length < 2) return `<div class="empty">Log this lift in 2 or more sessions to see the trend.</div>`;
+    if (points.length < 2) return `<div class="empty">Log reps for this lift in 2 or more sessions to see the trend.</div>`;
     const unit = bodyweight ? " reps" : " kg";
     const firstV = points[0].value, lastV = points[points.length - 1].value;
     const pct = P2.pctChange(firstV, lastV);
     const setTxt = (b) => (bodyweight || !b.w ? `${b.r} reps` : `${b.w} × ${b.r}`);
     return `<div class="viz-head"><span>${bodyweight ? "Best reps" : "Estimated max"}</span><b>${esc(lastV)}${esc(unit)}</b>
         <em>${pct == null || pct === 0 ? `${points.length} sessions` : `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% since ${esc(shortDate(points[0].date))}`}</em></div>
-      ${lineChart(points.map(p => ({ y: p.value, label: shortDate(p.date), tip: [`${p.value}${unit}`, `${prettyShort(p.date)} · best set ${setTxt(p.best)}`] })), { unit, markMax: true })}
+      ${lineChart(points.map(p => ({ y: p.value, label: shortDate(p.date), tip: [`${p.value}${unit}`, `${prettyShort(p.date)} · best set ${setTxt(p.best)}`] })), { unit, markMax: true, label: bodyweight ? "Best reps per session" : "Estimated max per session" })}
       <div class="viz-cap">${bodyweight ? "Most reps in a set, each session." : "Your best set each session as a one-rep max estimate, so reps count: 60 × 10 beats 62.5 × 5."}</div>
       ${tableView(["Date", "Best set", bodyweight ? "Reps" : "Est. max (kg)"], points.slice().reverse().map(p => [shortDate(p.date), setTxt(p.best), String(p.value)]))}`;
   }

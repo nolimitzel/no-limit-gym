@@ -27,15 +27,24 @@ function ticks(min, max, count = 3) {
   for (let v = lo; v <= hi + step / 2; v += step) out.push(Math.round(v * 100) / 100);
   return out;
 }
+// whole-number ticks for counts; the last tick is always >= top
+export function countTicks(top) {
+  const t = Math.max(1, Math.ceil(top));
+  const step = t <= 4 ? 1 : t <= 8 ? 2 : Math.ceil(t / 4);
+  const out = [];
+  for (let v = 0; v < t + step; v += step) { out.push(v); if (v >= t) break; }
+  return out;
+}
+export { ticks as valueTicks };
 const compact = (v) => (Math.abs(v) >= 1000 ? (Math.round(v / 100) / 10) + "K" : String(v));
 // readout data rides on the wrapper; bindCharts() turns it into the tooltip
 const vizAttr = (kind, pts) => ` data-viz="${esc(JSON.stringify({ kind, pts }))}"`;
 
 /* Line for change over time. points: [{ y, label, tip: [value line, detail line] }].
    target: optional reference value (e.g. bodyweight goal) drawn as a labelled hairline. */
-export function lineChart(points, { unit = "", target = null, targetLabel = "", markMax = false } = {}) {
+export function lineChart(points, { unit = "", target = null, targetLabel = "", markMax = false, label = "" } = {}) {
   if (!points || points.length < 2) return "";
-  const H = 170, pL = 34, pR = 44, pT = 16, pB = 24;
+  const H = 170, pL = 34, pR = 54, pT = 16, pB = 24;
   const ys = points.map((p) => p.y).concat(target != null ? [target] : []);
   const tk = ticks(Math.min(...ys), Math.max(...ys));
   const mn = tk[0], mx = tk[tk.length - 1];
@@ -48,12 +57,15 @@ export function lineChart(points, { unit = "", target = null, targetLabel = "", 
   const area = `${pL},${pT + plotH} ${line} ${X(points.length - 1).toFixed(1)},${pT + plotH}`;
   const last = points[points.length - 1], li = points.length - 1;
   let maxI = -1;
-  if (markMax) { maxI = points.reduce((m, p, i) => (p.y > points[m].y ? i : m), 0); if (maxI === li) maxI = -1; }
+  if (markMax) {
+    maxI = points.reduce((m, p, i) => (p.y > points[m].y ? i : m), 0);
+    if (maxI === li || points[maxI].y <= points[li].y) maxI = -1;   // only when the best isn't the latest
+  }
   const tgt = target != null ? `<line x1="${pL}" y1="${Y(target).toFixed(1)}" x2="${W - pR}" y2="${Y(target).toFixed(1)}" stroke="${INK}" stroke-opacity=".35" stroke-width="1"/>
     <text x="${W - pR + 4}" y="${(Y(target) + 3).toFixed(1)}" fill="${INK2}" font-size="9">${esc(targetLabel)}</text>` : "";
   const ring = (i, r) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(points[i].y).toFixed(1)}" r="${r}" fill="${ACCENT}" stroke="${SURFACE}" stroke-width="2"/>`;
   const pts = points.map((p, i) => ({ x: +X(i).toFixed(1), y: +Y(p.y).toFixed(1), tip: p.tip }));
-  return `<div class="viz"${vizAttr("line", pts)}><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(points.length + " sessions, latest " + last.y + unit)}">
+  return `<div class="viz"${vizAttr("line", pts)}><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc((label || "Trend") + ", latest " + last.y + unit)}">
       ${grid}${tgt}
       <polygon points="${area}" fill="${ACCENT}" fill-opacity=".1"/>
       <polyline points="${line}" fill="none" stroke="${ACCENT}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
@@ -72,7 +84,7 @@ export function columnChart(bars, { goal = null, goalLabel = "" } = {}) {
   if (!bars || !bars.length) return "";
   const H = 150, pL = 22, pR = 40, pT = 16, pB = 24;
   const top = Math.max(1, goal || 0, ...bars.map((b) => b.y));
-  const tk = ticks(0, top, 3).filter((v) => Number.isInteger(v));
+  const tk = countTicks(top);
   const mx = tk[tk.length - 1];
   const plotW = W - pL - pR, plotH = H - pT - pB, slot = plotW / bars.length;
   const bw = Math.min(24, slot * 0.62);
@@ -106,39 +118,57 @@ export function sparkline(values) {
   const pts = values.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
   const li = values.length - 1;
   return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${REST}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${X(li).toFixed(1)}" cy="${Y(values[li]).toFixed(1)}" r="3" fill="${ACCENT}" stroke="${SURFACE}" stroke-width="1.5"/></svg>`;
+    <circle cx="${X(li).toFixed(1)}" cy="${Y(values[li]).toFixed(1)}" r="4" fill="${ACCENT}" stroke="${SURFACE}" stroke-width="2"/></svg>`;
 }
 
 /* Tap / hover readout for every .viz inside root. The crosshair (lines) or the
    column highlight (bars) snaps to the nearest point; tooltip text goes in with
    textContent, never innerHTML. */
+let OUTSIDE_BOUND = false;
 export function bindCharts(root) {
+  if (!OUTSIDE_BOUND && typeof document !== "undefined") {
+    OUTSIDE_BOUND = true;   // a tap anywhere else closes an open readout (touch has no "leave")
+    document.addEventListener("pointerdown", (e) => {
+      document.querySelectorAll(".viz").forEach((v) => { if (!v.contains(e.target)) v._hide?.(); });
+    });
+  }
   root.querySelectorAll(".viz[data-viz]").forEach((el) => {
     let data;
     try { data = JSON.parse(el.dataset.viz); } catch { return; }
+    if (!data.pts || !data.pts.length) return;
     const svg = el.querySelector("svg"), tip = el.querySelector(".viz-tip");
     const xl = svg.querySelector(".viz-x"), hl = svg.querySelector(".viz-hl");
-    const show = (clientX) => {
-      const box = svg.getBoundingClientRect(), k = box.width / W;
-      const vx = (clientX - box.left) / k;
-      let i = 0;
-      data.pts.forEach((p, j) => { if (Math.abs(p.x - vx) < Math.abs(data.pts[i].x - vx)) i = j; });
-      const p = data.pts[i];
+    let cur = -1, fromPointer = false;
+    const showAt = (i) => {
+      cur = Math.max(0, Math.min(data.pts.length - 1, i));
+      const p = data.pts[cur], box = svg.getBoundingClientRect(), k = box.width / W;
       if (xl) { xl.setAttribute("x1", p.x); xl.setAttribute("x2", p.x); xl.setAttribute("visibility", "visible"); }
       if (hl) { hl.setAttribute("x", p.x - p.w / 2); hl.setAttribute("width", p.w); hl.setAttribute("visibility", "visible"); }
       tip.replaceChildren(...(p.tip || []).map((t, j) => { const d = document.createElement(j ? "small" : "b"); d.textContent = t; return d; }));
       tip.hidden = false;
-      const left = Math.min(Math.max(p.x * k - tip.offsetWidth / 2, 0), box.width - tip.offsetWidth);
-      tip.style.left = left + "px";
+      tip.style.left = Math.min(Math.max(p.x * k - tip.offsetWidth / 2, 0), box.width - tip.offsetWidth) + "px";
       tip.style.top = Math.max(0, p.y * k - tip.offsetHeight - 12) + "px";
     };
-    const hide = () => { tip.hidden = true; xl?.setAttribute("visibility", "hidden"); hl?.setAttribute("visibility", "hidden"); };
-    el.addEventListener("pointermove", (e) => show(e.clientX));
-    el.addEventListener("pointerdown", (e) => show(e.clientX));
+    const nearest = (clientX) => {
+      const box = svg.getBoundingClientRect(), vx = (clientX - box.left) / (box.width / W);
+      let i = 0;
+      data.pts.forEach((p, j) => { if (Math.abs(p.x - vx) < Math.abs(data.pts[i].x - vx)) i = j; });
+      return i;
+    };
+    const hide = () => { cur = -1; tip.hidden = true; xl?.setAttribute("visibility", "hidden"); hl?.setAttribute("visibility", "hidden"); };
+    el._hide = hide;
+    el.addEventListener("pointermove", (e) => showAt(nearest(e.clientX)));
+    el.addEventListener("pointerdown", (e) => { fromPointer = true; showAt(nearest(e.clientX)); });
     el.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") hide(); });
     el.tabIndex = 0;
-    el.addEventListener("focus", () => { const b = svg.getBoundingClientRect(); show(b.left + data.pts[data.pts.length - 1].x * (b.width / W)); });
-    el.addEventListener("blur", hide);
+    el.setAttribute("role", "group");
+    el.setAttribute("aria-label", (svg.getAttribute("aria-label") || "Chart") + ". Use the arrow keys to read each point.");
+    el.addEventListener("focus", () => { if (!fromPointer) showAt(data.pts.length - 1); fromPointer = false; });
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); showAt((cur < 0 ? data.pts.length - 1 : cur) + (e.key === "ArrowRight" ? 1 : -1)); }
+      else if (e.key === "Escape") hide();
+    });
+    el.addEventListener("blur", () => { fromPointer = false; hide(); });
   });
 }
 
