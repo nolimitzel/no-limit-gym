@@ -1177,14 +1177,14 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .h2-sq .h2-stats{flex:0 0 auto;flex-direction:row;gap:4px}
 .h2-sq .h2-stats div{flex:1;flex-direction:column;align-items:center;gap:1px;padding:0;border:0;min-width:0;text-align:center}
 .h2-sq .h2-stats b{font-size:19px;min-width:0;line-height:1}
-.h2-sq .h2-stats span{font-size:9.5px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.h2-sq .h2-stats span{font-size:9.5px;line-height:1.15;max-width:100%;overflow-wrap:anywhere}   /* may wrap to 2 lines on narrow phones */
 /* soundtrack square: cover fills it, a dark fade carries the text */
 .h2-music.h2-sq{flex-direction:column;align-items:flex-start;justify-content:flex-end;gap:0;padding:14px;text-align:left}
 .h2-music.h2-sq .hm2-art{position:absolute;top:14px;left:14px;width:46px;height:46px}
 .h2-music.h2-sq .hm2-art.has-cover{inset:0;width:100%;height:100%;border-radius:0}
 .h2-music.h2-sq .hm2-art.has-cover::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 35%,rgba(0,0,0,.82))}
 .h2-music.h2-sq .hm2-meta{position:relative;flex:0 0 auto;width:100%}
-.h2-music.h2-sq .hm2-meta b{font-size:14px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.h2-music.h2-sq .hm2-meta b{font-size:14px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .h2-music.h2-sq .hm2-go{position:absolute;top:12px;right:12px;width:30px;height:30px;border-radius:50%;align-items:center;justify-content:center;
   background:rgba(0,0,0,.45);color:var(--ink);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 /* now playing square: album art fills it; track, artist and progress over the fade */
@@ -1200,3 +1200,9 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .np-sq .np-cta{position:absolute;z-index:2;top:12px;right:12px;width:30px;height:30px;border-radius:50%;align-items:center;justify-content:center;
   background:rgba(0,0,0,.45);color:var(--ink)}
 .np-sq .np-art.ph{display:flex;align-items:flex-start;justify-content:flex-start;padding:14px}
+
+/* ---- Progress: personal records, 5 up front, the rest folded ---- */
+.subhead .sub-n{font-size:11px;letter-spacing:.04em;text-transform:none;color:var(--muted);font-weight:500;margin-left:6px}
+.pr-more .pr-row:first-child{border-top:1px solid var(--line)}
+.pr-toggle{display:block;width:100%;margin-top:4px;padding:12px 0 4px;font-size:13px;font-weight:600;color:var(--muted);text-align:center;border-top:1px solid rgba(255,255,255,.06)}
+.pr-toggle:active{color:var(--ink)}

@@ -424,9 +424,9 @@ export function initTracker() {
         <text x="64" y="86" text-anchor="middle" class="h2-ring-l">this week</text>
       </svg>
       <div class="h2-stats">
-        <div><b>${streak}</b><span>wk streak</span></div>
+        <div><b>${streak}</b><span>week streak</span></div>
         <div><b>${weekPRs.length}</b><span>${weekPRs.length === 1 ? "new PR" : "new PRs"}</span></div>
-        <div><b>${toGo === 0 ? "✓" : toGo}</b><span>${toGo === 0 ? "goal hit" : `to goal ${goal}`}</span></div>
+        <div><b>${toGo === 0 ? "✓" : toGo}</b><span>${toGo === 0 ? "goal hit" : "to go"}</span></div>
       </div></div>${homeMusicCard()}</div>`;
 
     // today's workout — white (not volt) action: the ring keeps the spotlight
@@ -1136,12 +1136,21 @@ export function initTracker() {
         .map(l => l.date).sort()[0];
       return { id, pr, when };
     }).filter(Boolean).sort((a, b) => ((a.when || "") < (b.when || "") ? 1 : -1));
-    html += `<div class="subhead">Personal records</div><div class="card">`;
-    html += prs.length ? prs.map(x => {
+    // the 5 most recent records up front; the rest fold away so the page doesn't run on
+    const PR_SHOW = 5;
+    const prRow = (x) => {
       const fresh = x.when && dayDiff(x.when, today) <= 14;
       return `<div class="pr-row ex-link" data-act="exhist" data-ex="${esc(x.id)}"><span>${esc(exMeta(x.id).name)}${fresh ? '<span class="tag-new">NEW</span>' : ""}<small>${x.when ? esc(shortDate(x.when)) : ""}</small></span>
         <span class="v">${esc(fmtSet(x.pr))}</span></div>`;
-    }).join("") : `<div class="empty">Your heaviest set on each lift will appear here.</div>`;
+    };
+    const freshN = prs.filter(x => x.when && dayDiff(x.when, today) <= 14).length;
+    html += `<div class="subhead">Personal records${prs.length ? ` <span class="sub-n">${prs.length} lifts${freshN ? ` · ${freshN} new` : ""}</span>` : ""}</div><div class="card">`;
+    if (!prs.length) html += `<div class="empty">Your heaviest set on each lift will appear here.</div>`;
+    else {
+      html += prs.slice(0, PR_SHOW).map(prRow).join("");
+      if (prs.length > PR_SHOW) html += `<div class="pr-more" hidden>${prs.slice(PR_SHOW).map(prRow).join("")}</div>
+        <button class="pr-toggle" data-act="prmore" data-n="${prs.length}">Show all ${prs.length}</button>`;
+    }
     html += `</div>`;
     html += `<button class="btn ghost" data-act="weekly" style="margin-top:14px">Weekly review — copy to share</button>
       <button class="linkbtn" data-act="history" style="margin-top:10px">View full workout history
@@ -2592,6 +2601,12 @@ export function initTracker() {
       scheduleAutosave();
     }
     else if (act === "exhist") openExerciseHistory(el.dataset.ex);
+    else if (act === "prmore") {
+      const more = el.parentElement.querySelector(".pr-more"); if (!more) return;
+      more.hidden = !more.hidden;
+      el.textContent = more.hidden ? `Show all ${el.dataset.n}` : "Show fewer";
+      if (more.hidden) el.closest(".card")?.scrollIntoView({ block: "nearest" });
+    }
     else if (act === "sspair") openSupersetSheet(el.dataset.ex);
     else if (act === "sspick") {
       const s = daySession(ACTIVE);
