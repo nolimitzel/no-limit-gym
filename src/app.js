@@ -435,10 +435,12 @@ export function initTracker() {
         up: a.up + b.up, same: a.same + b.same, down: a.down + b.down, volume: a.volume + b.volume,
         newBests: a.newBests.concat(b.newBests) }), { up: 0, same: 0, down: 0, volume: 0, newBests: [] });
       const chips = [];
-      if (v.up + v.same + v.down) {
-        chips.push(`<span class="vs-chip${v.up ? " up" : ""}">▲ ${v.up} beat last time</span>`);
-        if (v.same) chips.push(`<span class="vs-chip">= ${v.same} matched</span>`);
-      }
+      if (v.up) chips.push(`<span class="vs-chip up">▲ ${v.up} beat last time</span>`);
+      if (v.same) chips.push(`<span class="vs-chip">= ${v.same} matched</span>`);
+      // two sessions in a day on the same lift: one new best per lift, the better set
+      const byLift = new Map();
+      v.newBests.forEach(b => { const cur = byLift.get(b.id); byLift.set(b.id, cur ? { id: b.id, set: H.betterSet(cur.set, b.set) } : b); });
+      v.newBests = [...byLift.values()];
       if (v.volume) chips.push(`<span class="vs-chip">${esc(kg(v.volume))} kg volume</span>`);
       const best = v.newBests.length ? `<div class="h2-best">New best · ${v.newBests.map(b => `${esc(exMeta(b.id).name)} ${esc(fmtSet(b.set))}`).join(" · ")}</div>` : "";
       return chips.length || best ? `<div class="h2-vs">${chips.join("")}</div>${best}` : "";

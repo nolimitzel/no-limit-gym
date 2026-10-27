@@ -107,3 +107,34 @@ test("sessionVsLast compares set by set and finds new bests", () => {
   assert.deepEqual(v.newBests.map((b) => b.id), ["bench"]);
   assert.deepEqual(sessionVsLast(logs, null).sets, 0);
 });
+
+test("prsThisWeek edge cases", () => {
+  const logs = [
+    { date: "2026-10-18", entries: { pull: [{ w: 0, r: 8 }], bench: [{ w: 60, r: 8 }] } },   // Sunday before: history
+    { date: "2026-10-19", entries: { pull: [{ w: 0, r: 10 }], bench: [{ w: 65, r: 5 }] } },  // Monday: both PRs
+    { date: "2026-10-21", entries: { bench: [{ w: 55, r: 8 }] } },                           // lower later session
+    { date: "2026-10-23", entries: {} },                                                     // empty
+    { date: "2026-10-30", entries: { squat: [{ w: 200, r: 1 }] } },                          // future: ignored
+  ];
+  const prs = prsThisWeek(logs, "2026-10-22");
+  assert.deepEqual(prs.map((p) => p.id).sort(), ["bench", "pull"]);
+  assert.deepEqual(prs.find((p) => p.id === "bench").set, { w: 65, r: 5 });   // the week's best, not the latest
+  assert.deepEqual(prsThisWeek([], "2026-10-22"), []);
+});
+
+test("sessionVsLast edge cases", () => {
+  const logs = [
+    { date: "2026-10-20", entries: { bench: [{ w: 60, r: 8 }], run: [{ w: 20, r: 1 }] } },
+    { date: "2026-10-27", entries: { bench: [{ w: 62.5, r: 8 }], run: [{ w: 25, r: 1 }], fly: [], newlift: [{ w: 20, r: 10 }] } },
+    { date: "2026-10-27", entries: { bench: [{ w: 65, r: 5 }] } },               // second session the same day
+    { date: "2026-11-03", entries: { bench: [{ w: 100, r: 1 }] } },              // later: never compared against
+  ];
+  const v = sessionVsLast(logs, logs[1], (id) => id === "run");
+  assert.equal(v.exercises, 3);                                                  // empty fly skipped
+  assert.equal(v.sets, 3);
+  assert.deepEqual([v.up, v.same, v.down], [1, 0, 0]);                          // run and newlift: nothing to compare
+  assert.equal(v.volume, 500 + 200);                                             // cardio adds no volume
+  assert.deepEqual(v.newBests.map((b) => b.id), ["bench"]);                      // a first-ever lift isn't a "new best"
+  const w = sessionVsLast(logs, logs[2]);                                        // same-day log compares with before today
+  assert.deepEqual(w.newBests.map((b) => b.set), [{ w: 65, r: 5 }]);
+});
