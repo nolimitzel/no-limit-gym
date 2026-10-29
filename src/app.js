@@ -385,7 +385,7 @@ export function initTracker() {
         <text x="64" y="66" text-anchor="middle" class="h2-ring-n">${done}/${goal}</text>
         <text x="64" y="86" text-anchor="middle" class="h2-ring-l">this week</text>
       </svg>
-      <div class="h2-line">${toGo === 0 ? "Goal hit this week" : streak > 1 ? `${streak}-week streak` : `${toGo} to go this week`}</div>
+      <div class="h2-line">${toGo === 0 ? (streak > 1 ? `Goal hit · ${streak}-week streak` : "Goal hit this week") : streak > 1 ? `${streak}-week streak` : `${toGo} to go this week`}</div>
       </div>${homeMusicCard()}</div>`;
 
     // today's workout — white (not volt) action: the ring keeps the spotlight
@@ -398,7 +398,7 @@ export function initTracker() {
       // two sessions in a day on the same lift: one new best per lift, the better set
       const byLift = new Map();
       v.newBests.forEach(b => { const cur = byLift.get(b.id); byLift.set(b.id, cur ? { id: b.id, set: H.betterSet(cur.set, b.set) } : b); });
-      const bests = [...byLift.values()];
+      const bests = [...byLift.values()].sort((a, b) => H.e1rm(b.set) - H.e1rm(a.set));
       // kept to one glance: sets beaten, and the headline new best (details live on Progress)
       const beat = v.up ? `<span class="vs-chip up">▲ ${v.up} ${v.up === 1 ? "set" : "sets"} beat last time</span>` : "";
       const best = bests.length ? `<div class="h2-best">New best · ${esc(exMeta(bests[0].id).name)} ${esc(fmtSet(bests[0].set))}${bests.length > 1 ? ` <span>+${bests.length - 1} more</span>` : ""}</div>` : "";

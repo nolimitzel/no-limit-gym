@@ -652,14 +652,9 @@ html{background:var(--base)} body{background:transparent}
 .h2-arc{animation:h2fill 1s cubic-bezier(.2,.8,.2,1) both}
 .h2-ring-n{font-family:var(--cond);font-size:30px;font-weight:700;fill:var(--ink);font-variant-numeric:tabular-nums}
 .h2-ring-l{font-size:10px;fill:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-.h2-stats{flex:1;display:flex;flex-direction:column;gap:11px;min-width:0}
-.h2-stats div{display:flex;align-items:baseline;gap:8px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.06)}
-.h2-stats div:last-child{border-bottom:0;padding-bottom:0}
-.h2-stats b{font-family:var(--cond);font-size:22px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;min-width:28px}
-.h2-stats span{font-size:12px;color:var(--muted)}
 
 .h2-today{padding:18px 18px 16px;margin-bottom:12px}
-.h2-today small,.h2-prog small,.hm2-meta small{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.h2-today small,.hm2-meta small{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
 .h2-today h2{font-family:var(--cond);font-size:34px;line-height:1;font-weight:700;margin:6px 0 6px;text-transform:uppercase;color:var(--ink)}
 .h2-today p{font-size:13px;color:var(--muted);margin:0 0 16px}
 .h2-cta{width:100%;height:50px;border-radius:16px;border:0;background:var(--ink);color:#0A0B0A;
@@ -667,15 +662,9 @@ html{background:var(--base)} body{background:transparent}
 .h2-cta:active{transform:scale(.97)}
 .h2-cta.ghost{background:var(--glass2);color:var(--ink);border:1px solid var(--glass-brd)}
 
-.h2-prog,.h2-music{width:100%;display:flex;align-items:center;gap:14px;padding:15px 16px;margin-bottom:12px;
+.h2-music{width:100%;display:flex;align-items:center;gap:14px;padding:15px 16px;margin-bottom:12px;
   text-align:left;color:var(--ink);text-decoration:none;font:inherit;transition:transform .08s ease}
-.h2-prog:active,.h2-music:active,.np-card:active{transform:scale(.98)}
-.h2-prog-l{flex:1;min-width:0;display:flex;flex-direction:column}
-.h2-prog-l b{font-size:16px;font-weight:700;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.h2-prog-l > small + b{margin-top:4px}
-.h2-prog-l > b:first-child + small{text-transform:none;letter-spacing:0;font-weight:400;font-size:12.5px;margin-top:3px}
-.h2-prog-v{font-size:13px;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums}
-.h2-prog-v em{font-style:normal;color:var(--ink);font-weight:600;margin-left:6px}
+.h2-music:active,.np-card:active{transform:scale(.98)}
 .h2-spark{flex-shrink:0}
 .hm2-art{width:44px;height:44px;border-radius:12px;flex-shrink:0;background:var(--glass2);border:1px solid var(--glass-brd);
   display:flex;align-items:center;justify-content:center;color:var(--ink)}
@@ -918,22 +907,6 @@ select.sel{background-color:var(--glass)}
 .wd .h2-cta{margin-top:6px}
 @media (prefers-reduced-motion:reduce){.wd-tick{animation:none}}
 
-/* ---- Home: getting stronger ---- */
-.gs{padding:14px 14px 6px;margin-bottom:12px}
-.gs-h{display:flex;align-items:center;justify-content:space-between;padding:0 2px}
-.gs-h small{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
-.gs-h button{font-size:12.5px;font-weight:600;color:var(--ink);padding:4px 2px}
-.gs-note{font-size:12px;color:var(--muted);margin:3px 2px 6px;line-height:1.4}
-.gs-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 2px;color:var(--ink);
-  border-top:1px solid rgba(255,255,255,.06)}
-.gs-row:active{opacity:.7}
-.gs-l{flex:1;min-width:0;display:flex;flex-direction:column}
-.gs-l b{font-size:14.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gs-l small{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
-.gs-row .h2-spark{width:64px;height:26px;flex-shrink:0}
-.gs-d{font-style:normal;font-size:13px;font-weight:700;min-width:50px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
-.gs-d.up{color:var(--ink)}
-.gs-d.down{color:#FF8A80}
 
 /* ---- add-exercise sheet (search pinned at top, sized above the keyboard) ---- */
 .axs{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100dvh);z-index:90;display:flex;flex-direction:column;
@@ -1174,10 +1147,6 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 /* week square: ring on top, three mini stats underneath */
 .h2-hero.h2-sq{flex-direction:column;justify-content:center;align-items:stretch;gap:8px;padding:12px 10px 12px}
 .h2-sq .h2-ring{width:72%;height:auto;align-self:center}
-.h2-sq .h2-stats{flex:0 0 auto;flex-direction:row;gap:4px}
-.h2-sq .h2-stats div{flex:1;flex-direction:column;align-items:center;gap:1px;padding:0;border:0;min-width:0;text-align:center}
-.h2-sq .h2-stats b{font-size:19px;min-width:0;line-height:1}
-.h2-sq .h2-stats span{font-size:9.5px;line-height:1.15;max-width:100%;overflow-wrap:anywhere}   /* may wrap to 2 lines on narrow phones */
 /* soundtrack square: cover fills it, a dark fade carries the text */
 .h2-music.h2-sq{flex-direction:column;align-items:flex-start;justify-content:flex-end;gap:0;padding:14px;text-align:left}
 .h2-music.h2-sq .hm2-art{position:absolute;top:14px;left:14px;width:46px;height:46px}
