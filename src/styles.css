@@ -1173,7 +1173,7 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 .h2-sq{position:relative;aspect-ratio:1/1;min-width:0;margin:0;border-radius:22px;overflow:hidden}
 /* week square: ring on top, three mini stats underneath */
 .h2-hero.h2-sq{flex-direction:column;justify-content:center;align-items:stretch;gap:8px;padding:12px 10px 12px}
-.h2-sq .h2-ring{width:58%;height:auto;align-self:center}
+.h2-sq .h2-ring{width:72%;height:auto;align-self:center}
 .h2-sq .h2-stats{flex:0 0 auto;flex-direction:row;gap:4px}
 .h2-sq .h2-stats div{flex:1;flex-direction:column;align-items:center;gap:1px;padding:0;border:0;min-width:0;text-align:center}
 .h2-sq .h2-stats b{font-size:19px;min-width:0;line-height:1}
@@ -1209,3 +1209,10 @@ body.kb-open .tabbar,body.kb-open .savebar,body.kb-open .restbar,body.kb-open .t
 /* the ring is drawn smaller in the square, so its text is set larger to stay readable (QA R1) */
 .h2-sq .h2-ring-n{font-size:36px}
 .h2-sq .h2-ring-l{font-size:15px;letter-spacing:.06em}
+
+/* ---- Home, decluttered: ring + one line, one-glance today card, link to Progress ---- */
+.h2-sq .h2-line{font-size:12px;font-weight:600;color:var(--muted);text-align:center;margin-top:2px;line-height:1.25}
+.h2-best span{color:var(--muted)}
+.h2-more{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;margin:2px 0 14px;padding:8px;
+  font-size:13px;font-weight:600;color:var(--muted)}
+.h2-more:active{color:var(--ink)}

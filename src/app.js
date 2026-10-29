@@ -317,42 +317,6 @@ export function initTracker() {
       <p class="sq-ihint" style="margin:10px 4px 0">Full tracks play if you're logged in to Spotify in this browser; otherwise you'll hear previews. Open in Spotify for the full playlist.</p>`);
     playlistMeta(url).then(m => { const t = document.querySelector("#nsheet .ns-title"); if (m?.title && t) t.textContent = m.title; });
   }
-  function spark(values) {
-    if (values.length < 2) return "";
-    const W = 96, Hh = 32, mn = Math.min(...values), mx = Math.max(...values), rng = (mx - mn) || 1;
-    const pts = values.map((v, i) => [2 + (i / (values.length - 1)) * (W - 6), Hh - 4 - ((v - mn) / rng) * (Hh - 8)]);
-    const [lx, ly] = pts[pts.length - 1];
-    return `<svg class="h2-spark" viewBox="0 0 ${W} ${Hh}" width="${W}" height="${Hh}" aria-hidden="true">
-      <polyline points="${pts.map(p => p.map(n => n.toFixed(1)).join(",")).join(" ")}" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="#F2F3EF"/></svg>`;
-  }
-  /* "Getting stronger": your top 3 improving lifts. Strength = estimated one-rep
-     max (weight AND reps count), compared across each lift's last 8 sessions. */
-  function homeProgress() {
-    const ids = [...new Set(DB.logs.flatMap(l => Object.keys(l.entries)))].filter(id => !isCardio(id));
-    const trends = ids.map(id => ({ id, n: allSetsFor(id).length, ...H.strengthTrend(DB.logs, id, 8) }))
-      .filter(t => t.latest);
-    if (!trends.length) {
-      return `<button class="h2-prog glass" data-act="gotrain"><span class="h2-prog-l"><small>Getting stronger</small><b>Your strength trend starts here</b>
-        <span class="h2-prog-v">Log a workout — every lift is tracked automatically.</span></span><span class="hm2-go">${ICON.chev}</span></button>`;
-    }
-    const rising = trends.filter(t => t.pct > 0).sort((a, b) => b.pct - a.pct);
-    const pick = (rising.length ? rising : trends.sort((a, b) => b.n - a.n)).slice(0, 3);
-    const rows = pick.map(t => {
-      const pc = t.pct == null ? null : Math.round(t.pct);
-      const delta = pc == null ? "1st session" : pc > 0 ? `+${pc}%` : pc < 0 ? `${pc}%` : "Steady";
-      const cls = t.pct > 0 ? "up" : t.pct < 0 ? "down" : "";
-      return `<button class="gs-row" data-act="exhist" data-ex="${esc(t.id)}">
-        <span class="gs-l"><b>${esc(exMeta(t.id)?.name || t.id)}</b><small>Latest best ${esc(fmtSet(t.latest))}</small></span>
-        ${spark(t.values)}<em class="gs-d ${cls}">${delta}</em></button>`;
-    }).join("");
-    const head = rising.length ? "Getting stronger" : "Your strength";
-    const note = rising.length
-      ? "Estimated max over your last 8 sessions — weight and reps both count."
-      : "No lift has moved up yet — add a rep or a little weight and it shows here.";
-    return `<div class="gs glass"><div class="gs-h"><small>${head}</small><button data-act="goprogress">All lifts</button></div>
-      <p class="gs-note">${note}</p>${rows}</div>`;
-  }
   function fmtMs(ms) {
     const s = Math.max(0, Math.round(ms / 1000));
     return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
@@ -411,8 +375,6 @@ export function initTracker() {
     const pct = Math.min(1, done / goal);
     const R = 52, C = 2 * Math.PI * R;
     const streak = myWeekStreak();
-    // new bests this week (the old all-time count just equalled the number of lifts ever done)
-    const weekPRs = P2.prsThisWeek(DB.logs, today, isCardio);
     const toGo = Math.max(0, goal - done);
     // top row: two squares — your week (left) and your soundtrack / now playing (right)
     html += `<div class="h2-top"><div class="h2-hero h2-sq glass">
@@ -423,11 +385,8 @@ export function initTracker() {
         <text x="64" y="66" text-anchor="middle" class="h2-ring-n">${done}/${goal}</text>
         <text x="64" y="86" text-anchor="middle" class="h2-ring-l">this week</text>
       </svg>
-      <div class="h2-stats">
-        <div><b>${streak}</b><span>week streak</span></div>
-        <div><b>${weekPRs.length}</b><span>${weekPRs.length === 1 ? "new PR" : "new PRs"}</span></div>
-        <div><b>${toGo === 0 ? "✓" : toGo}</b><span>${toGo === 0 ? "goal hit" : "to go"}</span></div>
-      </div></div>${homeMusicCard()}</div>`;
+      <div class="h2-line">${toGo === 0 ? "Goal hit this week" : streak > 1 ? `${streak}-week streak` : `${toGo} to go this week`}</div>
+      </div>${homeMusicCard()}</div>`;
 
     // today's workout — white (not volt) action: the ring keeps the spotlight
     const todays = trainedLogs().filter(l => l.date === today);
@@ -436,16 +395,14 @@ export function initTracker() {
       const v = list.map(l => P2.sessionVsLast(DB.logs, l, isCardio)).reduce((a, b) => ({
         up: a.up + b.up, same: a.same + b.same, down: a.down + b.down, volume: a.volume + b.volume,
         newBests: a.newBests.concat(b.newBests) }), { up: 0, same: 0, down: 0, volume: 0, newBests: [] });
-      const chips = [];
-      if (v.up) chips.push(`<span class="vs-chip up">▲ ${v.up} beat last time</span>`);
-      if (v.same) chips.push(`<span class="vs-chip">= ${v.same} matched</span>`);
       // two sessions in a day on the same lift: one new best per lift, the better set
       const byLift = new Map();
       v.newBests.forEach(b => { const cur = byLift.get(b.id); byLift.set(b.id, cur ? { id: b.id, set: H.betterSet(cur.set, b.set) } : b); });
-      v.newBests = [...byLift.values()];
-      if (v.volume) chips.push(`<span class="vs-chip">${esc(kg(v.volume))} kg volume</span>`);
-      const best = v.newBests.length ? `<div class="h2-best">New best · ${v.newBests.map(b => `${esc(exMeta(b.id).name)} ${esc(fmtSet(b.set))}`).join(" · ")}</div>` : "";
-      return chips.length || best ? `<div class="h2-vs">${chips.join("")}</div>${best}` : "";
+      const bests = [...byLift.values()];
+      // kept to one glance: sets beaten, and the headline new best (details live on Progress)
+      const beat = v.up ? `<span class="vs-chip up">▲ ${v.up} ${v.up === 1 ? "set" : "sets"} beat last time</span>` : "";
+      const best = bests.length ? `<div class="h2-best">New best · ${esc(exMeta(bests[0].id).name)} ${esc(fmtSet(bests[0].set))}${bests.length > 1 ? ` <span>+${bests.length - 1} more</span>` : ""}</div>` : "";
+      return beat || best ? `${beat ? `<div class="h2-vs">${beat}</div>` : ""}${best}` : "";
     };
     const open = todays.find(l => l.done === false);          // started, not finished
     if (open) {
@@ -474,7 +431,7 @@ export function initTracker() {
         <button class="h2-cta" data-act="gotrain">Choose workout ${ICON.arrow}</button></div>`;
     }
 
-    html += homeProgress();
+    html += `<button class="h2-more" data-act="goprogress">See your progress ${ICON.chev}</button>`;
 
     // the week at a glance — what you actually trained, plus anything scheduled
     html += `<div class="h2-weekhd"><span>Your week</span><button data-act="weekedit">Schedule</button></div><div class="h2-week glass">`;
